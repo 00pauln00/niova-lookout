@@ -2,38 +2,45 @@ package lookout
 
 import (
 	"bytes"
+	"common/prometheus_handler"
+	"common/requestResponseLib"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"github.com/fsnotify/fsnotify"
-	"github.com/google/uuid"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
-	"common/requestResponseLib"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
-	"common/prometheus_handler"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/google/uuid"
 )
 
+var HttpPort int
+
 type EPContainer struct {
-	MonitorUUID   string
-	CTLPath	      string
-	AppType       string
-        HttpPort      int
-
-	Statb         syscall.Stat_t
-        EpWatcher     *fsnotify.Watcher
-	EpMap         map[uuid.UUID]*NcsiEP
-	mutex         sync.Mutex
-	run           bool
-	httpQuery     map[string](chan []byte)
+	MonitorUUID      string
+	CTLPath          string
+	AppType          string
+	HttpPort         int
+	EnableHttp       bool
+	SerfMembershipCB func() map[string]bool
+	Statb            syscall.Stat_t
+	EpWatcher        *fsnotify.Watcher
+	EpMap            map[uuid.UUID]*NcsiEP
+	mutex            sync.Mutex
+	run              bool
+	httpQuery        map[string](chan []byte)
+	PortRange        []uint16
+	RetPort          *int
 }
-
 
 func (epc *EPContainer) tryAdd(uuid uuid.UUID) {
 	lns := epc.EpMap[uuid]
@@ -52,7 +59,7 @@ func (epc *EPContainer) tryAdd(uuid uuid.UUID) {
 		}
 
 		if err := epc.EpWatcher.Add(newlns.Path + "/output"); err != nil {
-			log.Fatalln("Watcher.Add() failed:", err)
+			log.Fatal("Watcher.Add() failed:", err)
 		}
 
 		// serialize with readers in httpd context, this is the only
@@ -73,9 +80,20 @@ func (epc *EPContainer) scan() {
 	for _, file := range files {
 		// Need to support removal of stale items
 		if uuid, err := uuid.Parse(file.Name()); err == nil {
-			if ((epc.MonitorUUID == uuid.String()) || (epc.MonitorUUID == "*")) {
+			if (epc.MonitorUUID == uuid.String()) || (epc.MonitorUUID == "*") {
 				epc.tryAdd(uuid)
 			}
+		}
+	}
+}
+
+func (epc *EPContainer) CheckLiveness(peerUuid string) bool {
+	uuid, _ := uuid.Parse(peerUuid)
+	for {
+		if epc.EpMap[uuid] == nil {
+			time.Sleep(1 * time.Second)
+		} else {
+			return epc.EpMap[uuid].Alive
 		}
 	}
 }
@@ -85,6 +103,7 @@ func (epc *EPContainer) monitor() error {
 
 	for epc.run == true {
 		var tmp_stb syscall.Stat_t
+		var sleepTime time.Duration
 		err = syscall.Stat(epc.CTLPath, &tmp_stb)
 		if err != nil {
 			log.Printf("syscall.Stat('%s'): %s", epc.CTLPath, err)
@@ -102,7 +121,14 @@ func (epc *EPContainer) monitor() error {
 			ep.Detect(epc.AppType)
 		}
 
-		time.Sleep(time.Second)
+		//TODO Change env variable to LOOKOUT SLEEP
+		sleepTimeStr := os.Getenv("NISD_LOOKOUT_SLEEP")
+		sleepTime, err = time.ParseDuration(sleepTimeStr)
+		if err != nil {
+			sleepTime = 5
+			log.Printf("Bad environment variable - Defaulting to standard value")
+		}
+		time.Sleep((sleepTime) * time.Second)
 	}
 
 	return err
@@ -147,14 +173,14 @@ func (epc *EPContainer) processInotifyEvent(event *fsnotify.Event) {
 	splitPath := strings.Split(event.Name, "/")
 	cmpstr := splitPath[len(splitPath)-1]
 	uuid, err := uuid.Parse(splitPath[len(splitPath)-3])
-        if err != nil {
-                return
-        }
+	if err != nil {
+		return
+	}
 
 	//temp file exclusion
-	if strings.Contains(cmpstr,".") {
+	if strings.Contains(cmpstr, ".") {
 		return
-        }
+	}
 
 	//Check if its for HTTP
 	if strings.Contains(cmpstr, "HTTP") {
@@ -173,7 +199,10 @@ func (epc *EPContainer) processInotifyEvent(event *fsnotify.Event) {
 	}
 
 	if ep := epc.EpMap[uuid]; ep != nil {
-		ep.Complete(cmpstr, nil)
+		err := ep.Complete(cmpstr, nil)
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
 }
 
@@ -218,6 +247,8 @@ func (epc *EPContainer) init() error {
 
 	go epc.epOutputWatcher()
 
+	epc.scan()
+
 	return nil
 }
 
@@ -233,7 +264,6 @@ func (epc *EPContainer) httpHandleUUIDRequest(w http.ResponseWriter,
 
 func (epc *EPContainer) httpHandleRoute(w http.ResponseWriter, r *url.URL) {
 	splitURL := strings.Split(r.String(), "/v0/")
-
 
 	if len(splitURL) == 2 && len(splitURL[1]) == 0 {
 		epc.httpHandleRootRequest(w)
@@ -251,25 +281,23 @@ func (epc *EPContainer) HttpHandle(w http.ResponseWriter, r *http.Request) {
 	epc.httpHandleRoute(w, r.URL)
 }
 
-
 func (epc *EPContainer) customQuery(node uuid.UUID, query string) []byte {
 	epc.mutex.Lock()
-        ep := epc.EpMap[node]
-        epc.mutex.Unlock()
-
+	ep := epc.EpMap[node]
+	epc.mutex.Unlock()
 	//If not present
-	if ep == nil{
+	if ep == nil {
 		return []byte("Specified NISD is not present")
 	}
 
-	httpID := "HTTP_"+uuid.New().String()
+	httpID := "HTTP_" + uuid.New().String()
 	epc.httpQuery[httpID] = make(chan []byte, 2)
-	ep.CustomQuery(query, httpID)
+	ep.CtlCustomQuery(query, httpID)
 
 	//FIXME: Have select in case of NISD dead and delete the channel
 	var byteOP []byte
 	select {
-	case byteOP = <- epc.httpQuery[httpID]:
+	case byteOP = <-epc.httpQuery[httpID]:
 		break
 	}
 	return byteOP
@@ -284,39 +312,152 @@ func (epc *EPContainer) QueryHandle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	requestObj := requestResponseLib.LookoutRequest{}
-        dec := gob.NewDecoder(bytes.NewBuffer(requestBytes))
-        err = dec.Decode(&requestObj)
-        if err != nil {
-                log.Println(err)
-        }
+	dec := gob.NewDecoder(bytes.NewBuffer(requestBytes))
+	err = dec.Decode(&requestObj)
+	if err != nil {
+		log.Println(err)
+	}
 
 	//Call the appropriate function
 	output := epc.customQuery(requestObj.UUID, requestObj.Cmd)
-
 	//Data to writer
 	w.Write(output)
 }
 
+func loadSystemInfo(labelMap map[string]string, sysInfo SystemInfo) map[string]string {
+	labelMap["NODE_NAME"] = sysInfo.UtsNodename
+	labelMap["SYS_NAME"] = sysInfo.UtsSysname
+	labelMap["MACHINE"] = sysInfo.UtsMachine
+
+	return labelMap
+}
+
+func loadPMDBLabelMap(labelMap map[string]string, raftEntry RaftInfo) map[string]string {
+	labelMap["STATE"] = raftEntry.State
+	labelMap["RAFT_UUID"] = raftEntry.RaftUUID
+	labelMap["VOTED_FOR"] = raftEntry.VotedForUUID
+	labelMap["FOLLOWER_REASON"] = raftEntry.FollowerReason
+	labelMap["CLIENT_REQS"] = raftEntry.ClientRequests
+
+	return labelMap
+}
+
+func loadNISDLabelMap(labelMap map[string]string, nisdRootEntry NISDRoot) map[string]string {
+	labelMap["STATUS"] = nisdRootEntry.Status
+	labelMap["ALT_NAME"] = nisdRootEntry.AltName
+
+	return labelMap
+}
+
+func getFollowerStats(raftEntry RaftInfo) string {
+	var output string
+	for indx := range raftEntry.FollowerStats {
+		UUID := raftEntry.FollowerStats[indx].PeerUUID
+		NextIdx := raftEntry.FollowerStats[indx].NextIdx
+		PrevIdxTerm := raftEntry.FollowerStats[indx].PrevIdxTerm
+		LastAckMs := raftEntry.FollowerStats[indx].LastAckMs
+		output += "\n" + fmt.Sprintf(`follower_stats{uuid="%s"next_idx="%d"prev_idx_term="%d"}%d`, UUID, NextIdx, PrevIdxTerm, LastAckMs)
+	}
+	return output
+}
+
+func (epc *EPContainer) parseMembershipPrometheus(state string, raftUUID string, nodeUUID string) string {
+	var output string
+	membership := epc.SerfMembershipCB()
+	for name, isAlive := range membership {
+		var adder, status string
+		if isAlive {
+			adder = "1"
+			status = "online"
+		} else {
+			adder = "0"
+			status = "offline"
+		}
+		if nodeUUID == name {
+			output += "\n" + fmt.Sprintf(`node_status{uuid="%s"state="%s"status="%s"raftUUID="%s"} %s`, name, state, status, raftUUID, adder)
+		} else {
+			// since we do not know the state of other nodes
+			output += "\n" + fmt.Sprintf(`node_status{uuid="%s"status="%s"raftUUID="%s"} %s`, name, status, raftUUID, adder)
+		}
+
+	}
+	return output
+}
+
 func (epc *EPContainer) MetricsHandler(w http.ResponseWriter, r *http.Request) {
-        //Split key based nisd's UUID and field
-        var output string
-        parsedUUID, _ := uuid.Parse(epc.MonitorUUID)
-	node := epc.EpMap[parsedUUID]
-	if len(node.EPInfo.RaftRootEntry) > 0 {
-		output += prometheus_handler.GenericPromDataParser(node.EPInfo.RaftRootEntry[0])
-        }
+	//Split key based nisd's UUID and field
+	var output string
 
-        fmt.Fprintln(w, output)
+	//Take snapshot of the EpMap
+	nodeMap := make(map[uuid.UUID]*NcsiEP)
+	epc.mutex.Lock()
+	for k, v := range epc.EpMap {
+		nodeMap[k] = v
+	}
+	epc.mutex.Unlock()
+
+	labelMap := make(map[string]string)
+	for _, node := range nodeMap {
+		labelMap = loadSystemInfo(labelMap, node.EPInfo.SysInfo)
+	}
+
+	if epc.AppType == "PMDB" {
+		parsedUUID, _ := uuid.Parse(epc.MonitorUUID)
+		node := nodeMap[parsedUUID]
+		labelMap["PMDB_UUID"] = parsedUUID.String()
+		labelMap["TYPE"] = epc.AppType
+		// Loading labelMap with PMDB data
+		labelMap = loadPMDBLabelMap(labelMap, node.EPInfo.RaftRootEntry[0])
+		// Parsing exported data
+		output += prometheus_handler.GenericPromDataParser(node.EPInfo.RaftRootEntry[0], labelMap)
+		// Parsing membership data
+		output += epc.parseMembershipPrometheus(node.EPInfo.RaftRootEntry[0].State, node.EPInfo.RaftRootEntry[0].RaftUUID, parsedUUID.String())
+		// Parsing follower data
+		output += getFollowerStats(node.EPInfo.RaftRootEntry[0])
+		// Parsing system info
+		output += prometheus_handler.GenericPromDataParser(node.EPInfo.SysInfo, labelMap)
+	} else if epc.AppType == "NISD" {
+		for uuid, node := range nodeMap {
+			labelMap["NISD_UUID"] = uuid.String()
+			labelMap["TYPE"] = epc.AppType
+			labelMap = loadNISDLabelMap(labelMap, node.EPInfo.NISDRootEntry[0])
+			// Parse NISDInfo
+			output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDInformation[0], labelMap)
+			// Parse NISDRootEntry
+			output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDRootEntry[0], labelMap)
+			// Parse nisd system info
+			output += prometheus_handler.GenericPromDataParser(node.EPInfo.SysInfo, labelMap)
+		}
+	}
+	fmt.Fprintln(w, output)
 }
 
-func (epc *EPContainer) serveHttp() {
-	http.HandleFunc("/v1/", epc.QueryHandle)
-	http.HandleFunc("/v0/", epc.HttpHandle)
-	http.HandleFunc("/metrics", epc.MetricsHandler)
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(epc.HttpPort), nil))
+func (epc *EPContainer) serveHttp() error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/", epc.QueryHandle)
+	mux.HandleFunc("/v0/", epc.HttpHandle)
+	mux.HandleFunc("/metrics", epc.MetricsHandler)
+	for i := len(epc.PortRange) - 1; i >= 0; i-- {
+		epc.HttpPort = int(epc.PortRange[i])
+		l, err := net.Listen("tcp", ":"+strconv.Itoa(epc.HttpPort))
+		if err != nil {
+			if strings.Contains(err.Error(), "bind") {
+				continue
+			} else {
+				fmt.Println("Error while starting lookout - ", err)
+				return err
+			}
+		} else {
+			go func() {
+				*epc.RetPort = epc.HttpPort
+				fmt.Println("Serving at - ", epc.HttpPort)
+				http.Serve(l, mux)
+			}()
+		}
+		break
+	}
+	return nil
 }
-
-
 
 func (epc *EPContainer) GetList() map[uuid.UUID]*NcsiEP {
 	epc.mutex.Lock()
@@ -324,28 +465,52 @@ func (epc *EPContainer) GetList() map[uuid.UUID]*NcsiEP {
 	return epc.EpMap
 }
 
-
 func (epc *EPContainer) MarkAlive(serviceUUID string) error {
 	serviceID, err := uuid.Parse(serviceUUID)
 	if err != nil {
 		return err
 	}
 	service, ok := epc.EpMap[serviceID]
-	if ( ok && service.Alive) {
+	if ok && service.Alive {
 		service.pendingCmds = make(map[string]*epCommand)
-                service.Alive = true
-                service.LastReport = time.Now()
+		service.Alive = true
+		service.LastReport = time.Now()
 	}
 	return nil
 }
 
-func (epc *EPContainer) Start() {
+func (epc *EPContainer) Start() error {
+	var err error
+	errs := make(chan error, 1)
 	//Start http service
-	go epc.serveHttp()
+	if epc.EnableHttp {
+		epc.httpQuery = make(map[string](chan []byte))
+		go func() {
+			err_r := epc.serveHttp()
+			errs <- err_r
+			if <-errs != nil {
+				return
+			}
+		}()
+		if err := <-errs; err != nil {
+			*epc.RetPort = -1
+			return err
+		}
+	}
 
 	//Setup lookout
-	epc.init()
+	err = epc.init()
+	if err != nil {
+		log.Printf("Lookout Init - ", err)
+		return err
+	}
 
 	//Start monitoring
-	epc.monitor()
+	err = epc.monitor()
+	if err != nil {
+		log.Printf("Lookout Monitor - ", err)
+		return err
+	}
+
+	return nil
 }

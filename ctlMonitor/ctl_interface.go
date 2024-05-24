@@ -7,10 +7,11 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
-	"strings"
+
 	"github.com/google/uuid"
 )
 
@@ -21,7 +22,7 @@ import "C"
 
 const (
 	maxPendingCmdsEP  = 32
-	maxOutFileSize    = 4*1024*1024
+	maxOutFileSize    = 4 * 1024 * 1024
 	outFileTimeoutSec = 2
 	outFilePollMsec   = 1
 	EPtimeoutSec      = 60.0
@@ -43,21 +44,50 @@ type SystemInfo struct {
 	UtsRelease              string    `json:"uts.release"`
 	UtsVersion              string    `json:"uts.version"`
 	UtsMachine              string    `json:"uts.machine"`
-	RusageUserCPUTimeUsed   float64   `json:"rusage.user_cpu_time_used"`
-	RusageSystemCPUTimeUsed float64   `json:"rusage.system_cpu_time_used"`
-	RusageMaxRss            int       `json:"rusage.max_rss"`
-	RusageMinFault          int       `json:"rusage.min_fault"`
-	RusageMajFault          int       `json:"rusage.maj_fault"`
-	RusageInBlock           int       `json:"rusage.in_block"`
-	RusageOutBlock          int       `json:"rusage.out_block"`
-	RusageVolCtsw           int       `json:"rusage.vol_ctsw"`
-	RusageInvolCtsw         int       `json:"rusage.invol_ctsw"`
+	RusageUserCPUTimeUsed   float64   `json:"rusage.user_cpu_time_used" type:"gauge" metric:"SYSINFO_user_cpu_time"`
+	RusageSystemCPUTimeUsed float64   `json:"rusage.system_cpu_time_used" type:"gauge" metric:"SYSINFO_sys_cpu_time"`
+	RusageMaxRss            int       `json:"rusage.max_rss" type:"counter" metric:"SYSINFO_max_rss"`
+	RusageMinFault          int       `json:"rusage.min_fault" type:"counter" metric:"SYSINFO_min_fault"`
+	RusageMajFault          int       `json:"rusage.maj_fault" type:"counter" metric:"SYSINFO_maj_fault"`
+	RusageInBlock           int       `json:"rusage.in_block" type:"counter" metric:"SYSINFO_in_block_usage"`
+	RusageOutBlock          int       `json:"rusage.out_block" type:"counter" metric:"SYSINFO_out_block_usage"`
+	RusageVolCtsw           int       `json:"rusage.vol_ctsw" type:"gauge" metric:"SYSINFO_vol_ctsw"`
+	RusageInvolCtsw         int       `json:"rusage.invol_ctsw" type:"gauge" metric:"SYSINFO_in_vol_ctsw"`
 }
 
 type NISDInfo struct {
-	ReadBytes	int	`json:"dev-bytes-read"`
-	WriteBytes	int	`json:"dev-bytes-write"`
+	ReadBytes          int       `json:"dev-bytes-read" type:"counter" metric:"nisd_dev_read_bytes"`
+	WriteBytes         int       `json:"dev-bytes-write" type:"counter" metric:"nisd_dev_write_bytes"`
+	NetRecvBytes       int       `json:"net-bytes-recv" type:"counter" metric:"nisd_net_bytes_recv"`
+	NetSendBytes       int       `json:"net-bytes-send" type:"counter" metric:"nisd_net_bytes_send"`
+	DevRdLatencyUsec   Histogram `json:"dev-rd-latency-usec" type:"histogram" metric:"nisd_dev_rd_latency_usec"`
+	DevWrLatencyUsec   Histogram `json:"dev-wr-latency-usec" type:"histogram" metric:"nisd_dev_wr_latency_usec"`
+	DevReadSize        Histogram `json:"dev-rd-size" type:"histogram" metric:"nisd_dev_rd_size"`
+	DevWriteSize       Histogram `json:"dev-wr-size" type:"histogram" metric:"nisd_dev_wr_size"`
+	NetRecvSize        Histogram `json:"net-recv-size" type:"histogram" metric:"nisd_net_recv_size"`
+	NetSendSize        Histogram `json:"net-send-size" type:"histogram" metric:"nisd_net_send_size"`
+	NetRecvLatencyUsec Histogram `json:"net-recv-latency-usec" type:"histogram" metric:"nisd_net_recv_latency_usec"`
+	NetSendLatencyUsec Histogram `json:"net-send-latency-usec" type:"histogram" metric:"nisd_net_send_latency_usec"`
 }
+
+type NISDRoot struct {
+	VBlockWritten         int    `json:"vblks-written" type:"counter" metric:"nisd_vblk_write"`
+	VBlockRead            int    `json:"vblks-read" type:"counter" metric:"nisd_vblk_read"`
+	VBlockHoleRead        int    `json:"vblks-hole-read" type:"gauge" metric:"nisd_vblk_hole_read"`
+	VBlockReplicationSent int    `json:"vblks-replication-sent" type:"gauge" metric:"nisd_vblk_replication_sent"`
+	VBlockReplicationRecv int    `json:"vblks-replication-recv" type:"gauge" metric:"nisd_vblk_replication_recv"`
+	MetablockWritten      int    `json:"metablock-sectors-written" type:"counter" metric:"nisd_metablock_wriitten"`
+	MetablockRead         int    `json:"metablcock-sectors-read" type:"counter" metric:"nisd_metablock_read"`
+	MetablockCacheHit     int    `json:"metablock-cache-hits" type:"counter" metric:"nisd_metablock_cache_hits"`
+	MetablockCacheMiss    int    `json:"metablock-cache-misses" type:"counter" metric:"nisd_metablock_cache_misses"`
+	NumPblks              int    `json:"num-pblks" type:"counter" metric:"nisd_num_pblk"`
+	NumPblksUsed          int    `json:"num-pblks-used" type:"counter" metric:"nisd_num_pblk_used"`
+	NumReservedPblks      int    `json:"num-reserved-pblks" type:"counter" metric:"nisd_num_reserved_pblks"`
+	NumReservedPblksUsed  int    `json:"num-reserved-pblks-used" type:"counter" metric:"nisd_num_reserved_pblks_used"`
+	Status                string `json:"status"`
+	AltName               string `json:"alt-name"`
+}
+
 type Histogram struct {
 	Num1       int `json:"1,omitempty"`
 	Num2       int `json:"2,omitempty"`
@@ -90,18 +120,19 @@ type RaftInfo struct {
 	State                    string    `json:"state"`
 	FollowerReason           string    `json:"follower-reason"`
 	ClientRequests           string    `json:"client-requests"`
-	Term                     int       `json:"term" type:"counter" metric:"Term"`
-	CommitIdx                int       `json:"commit-idx"`
-	LastApplied              int       `json:"last-applied"`
-	LastAppliedCumulativeCrc int64     `json:"last-applied-cumulative-crc"`
-	NewestEntryIdx           int       `json:"newest-entry-idx"`
-	NewestEntryTerm          int       `json:"newest-entry-term"`
-	NewestEntryDataSize      int       `json:"newest-entry-data-size"`
-	NewestEntryCrc           int64     `json:"newest-entry-crc"`
+	Term                     int       `json:"term" type:"gauge" metric:"PMDB_term"`
+	CommitIdx                int       `json:"commit-idx" type:"gauge" metric:"PMDB_commitIdx"`
+	LastApplied              int       `json:"last-applied" type:"gauge" metric:"PMDB_last_applied"`
+	LastAppliedCumulativeCrc int64     `json:"last-applied-cumulative-crc" type:"gauge" metric:"PMDB_last_applied_cumulative_crc"`
+	NewestEntryIdx           int       `json:"newest-entry-idx" type:"gauge" metric:"PMDB_newest_entry_idx"`
+	NewestEntryTerm          int       `json:"newest-entry-term" type:"gauge" metric:"PMDB_newest_entry_term"`
+	NewestEntryDataSize      int       `json:"newest-entry-data-size" type:"gauge" metric:"PMDB_newest_entry_data_size"`
+	NewestEntryCrc           int64     `json:"newest-entry-crc" type:"gauge" metric:"PMDB_newest_entry_crc"`
 	DevReadLatencyUsec       Histogram `json:"dev-read-latency-usec" type:"histogram" metric:"dev_read_latency_usec"`
 	DevWriteLatencyUsec      Histogram `json:"dev-write-latency-usec" type:"histogram" metric:"dev_write_latency_usec"`
 	FollowerStats            []struct {
 		PeerUUID    string `json:"peer-uuid"`
+		LastAckMs   int    `json:"ms-since-last-ack"`
 		LastAck     Time   `json:"last-ack"`
 		NextIdx     int    `json:"next-idx"`
 		PrevIdxTerm int    `json:"prev-idx-term"`
@@ -111,9 +142,10 @@ type RaftInfo struct {
 }
 
 type CtlIfOut struct {
-	SysInfo		SystemInfo `json:"system_info,omitempty"`
-	RaftRootEntry	[]RaftInfo `json:"raft_root_entry,omitempty"`
-	NISDInformation	[]NISDInfo `json:"niorq_mgr_root_entry,omitempty"`
+	SysInfo         SystemInfo `json:"system_info,omitempty"`
+	RaftRootEntry   []RaftInfo `json:"raft_root_entry,omitempty"`
+	NISDInformation []NISDInfo `json:"niorq_mgr_root_entry,omitempty"`
+	NISDRootEntry   []NISDRoot `json:"nisd_root_entry,omitempty"`
 }
 
 type NcsiEP struct {
@@ -123,7 +155,7 @@ type NcsiEP struct {
 	NiovaSvcType string                `json:"type"`
 	Port         int                   `json:"port"`
 	LastReport   time.Time             `json:"-"`
-	LastClear    time.Time		   `json:"-"`
+	LastClear    time.Time             `json:"-"`
 	Alive        bool                  `json:"responsive"`
 	EPInfo       CtlIfOut              `json:"ep_info"`
 	pendingCmds  map[string]*epCommand `json:"-"`
@@ -136,7 +168,7 @@ const (
 	RaftInfoOp   EPcmdType = 1
 	SystemInfoOp EPcmdType = 2
 	NISDInfoOp   EPcmdType = 3
-	Custom	     EPcmdType = 4
+	Custom       EPcmdType = 4
 )
 
 type epCommand struct {
@@ -231,7 +263,7 @@ func (cmd *epCommand) prep() {
 		cmd.fn = "lookout_ncsiep_" + strconv.FormatInt(int64(os.Getpid()), 10) +
 			"_" + strconv.FormatInt(int64(time.Now().Nanosecond()), 10)
 	}
-	cmd.cmd = cmd.cmd + "\nOUTFILE /" + cmd.fn +"\n"
+	cmd.cmd = cmd.cmd + "\nOUTFILE /" + cmd.fn + "\n"
 
 	// Add the cmd into the endpoint's pending cmd map
 	cmd.ep.addCmd(cmd)
@@ -278,7 +310,7 @@ func (ep *NcsiEP) addCmd(cmd *epCommand) error {
 
 func (ep *NcsiEP) removeCmd(cmdName string) *epCommand {
 	ep.Mutex.Lock()
-	cmd,ok := ep.pendingCmds[cmdName]
+	cmd, ok := ep.pendingCmds[cmdName]
 	if ok {
 		delete(ep.pendingCmds, cmdName)
 	}
@@ -306,15 +338,15 @@ func (ep *NcsiEP) getSysinfo() error {
 }
 
 func (ep *NcsiEP) getNISDinfo() error {
-	cmd := epCommand{ep: ep, cmd: "GET /niorq_mgr_root_entry/.*", op: NISDInfoOp}
+	cmd := epCommand{ep: ep, cmd: "GET /.*/.*/.*", op: NISDInfoOp}
 	cmd.submit()
 	return cmd.err
 }
 
-func (ep *NcsiEP) CustomQuery(customCMD string, ID string) error {
+func (ep *NcsiEP) CtlCustomQuery(customCMD string, ID string) error {
 	cmd := epCommand{ep: ep, cmd: customCMD, op: Custom, fn: ID}
-        cmd.submit()
-        return cmd.err
+	cmd.submit()
+	return cmd.err
 }
 
 func (ep *NcsiEP) update(ctlData *CtlIfOut, op EPcmdType) {
@@ -329,6 +361,8 @@ func (ep *NcsiEP) update(ctlData *CtlIfOut, op EPcmdType) {
 	case NISDInfoOp:
 		//update
 		ep.EPInfo.NISDInformation = ctlData.NISDInformation
+		ep.EPInfo.NISDRootEntry = ctlData.NISDRootEntry
+		ep.EPInfo.SysInfo = ctlData.SysInfo
 
 	default:
 		log.Printf("invalid op=%d \n", op)
@@ -371,46 +405,45 @@ func (ep *NcsiEP) Complete(cmdName string, output *[]byte) error {
 }
 
 func (ep *NcsiEP) removeFiles(folder string) {
-        files, err := ioutil.ReadDir(folder)
-        if err != nil {
-                return
-        }
+	files, err := ioutil.ReadDir(folder)
+	if err != nil {
+		return
+	}
 
-        for _, file := range files {
-                if strings.Contains(file.Name(),"lookout") {
-                        checkTime := file.ModTime().Local().Add(time.Hour)
-                        if time.Now().After(checkTime) {
-                                os.Remove(folder+file.Name())
-                        }
-                }
-        }
+	for _, file := range files {
+		if strings.Contains(file.Name(), "lookout") {
+			checkTime := file.ModTime().Local().Add(time.Hour)
+			if time.Now().After(checkTime) {
+				os.Remove(folder + file.Name())
+			}
+		}
+	}
 }
 
 func (ep *NcsiEP) Remove() {
 	//Remove stale ctl files
-	input_path := ep.Path+"/input/"
+	input_path := ep.Path + "/input/"
 	ep.removeFiles(input_path)
 	//output files
-	output_path := ep.Path+"/output/"
+	output_path := ep.Path + "/output/"
 	ep.removeFiles(output_path)
 }
 
-
 func (ep *NcsiEP) Detect(appType string) error {
-	if ep.Alive{
+	if ep.Alive {
 		var err error
 		switch appType {
-			case "NISD":
-				ep.getNISDinfo()
-			case "PMDB":
-				err = ep.getSysinfo()
-				if err == nil{
-					err = ep.getRaftinfo()
-				}
+		case "NISD":
+			ep.getNISDinfo()
+		case "PMDB":
+			err = ep.getSysinfo()
+			if err == nil {
+				err = ep.getRaftinfo()
+			}
 
 		}
 
-		if (time.Since(ep.LastReport) > time.Second*EPtimeoutSec) {
+		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
 			ep.Alive = false
 		}
 		return err
