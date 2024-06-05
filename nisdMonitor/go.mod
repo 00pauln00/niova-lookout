@@ -21,12 +21,12 @@ replace niova/go-pumicedb-lib/common => ../../pumiceDB/common
 go 1.18
 
 require (
-	common/httpClient v0.0.0-00010101000000-000000000000
+	common/httpClient v0.0.0-00010101000000-000000000000 // indirect
 	common/lookout v0.0.0-00010101000000-000000000000
 	common/requestResponseLib v0.0.0-00010101000000-000000000000
 	common/serviceDiscovery v0.0.0-00010101000000-000000000000
 	common/specificCompressionLib v0.0.0-00010101000000-000000000000
-	controlplane/serfAgent v0.0.0-00010101000000-000000000000
+	controlplane/serfAgent v0.0.0-00010101000000-000000000000 // indirect
 	github.com/google/uuid v1.3.0
 )
 
