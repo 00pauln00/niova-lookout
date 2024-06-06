@@ -1,22 +1,22 @@
 module lookout/nisdLookout
 
-replace controlplane/serfAgent => ../../serf/agent/
+replace controlplane/serfAgent => ../../../niova-core/go/serf/agent/
 
 replace common/lookout => ../ctlMonitor/
 
-replace common/serviceDiscovery => ../../serf/serviceDiscovery
+replace common/serviceDiscovery => ../../../niova-core/go/serf/serviceDiscovery/
 
-replace common/serfClient => ../../serf/client
+replace common/serfClient => ../../../niova-core/go/serf/client
 
-replace common/httpClient => ../../http/client
+replace common/httpClient => ../../../niova-core/go/http/client
 
 replace common/requestResponseLib => ../RequestResponseLib/
 
-replace common/specificCompressionLib => ../../specificCompressionLib/
+replace common/specificCompressionLib => ../../../niova-core/go/specificCompressionLib/
 
 replace common/prometheus_handler => ../prometheusHandler/
 
-replace niova/go-pumicedb-lib/common => ../../pumiceDB/common
+replace niova/go-pumicedb-lib/common => ../../../niova-core/go/pumiceDB/common
 
 go 1.18
 
