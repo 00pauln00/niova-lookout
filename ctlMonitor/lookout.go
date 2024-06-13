@@ -201,9 +201,11 @@ func (epc *EPContainer) processInotifyEvent(event *fsnotify.Event) {
 	}
 
 	if ep := epc.EpMap[uuid]; ep != nil {
-		err := ep.Complete(cmpstr, nil)
+		var output []byte
+		err := ep.Complete(cmpstr, &output)
+		fmt.Println("Complete() output: ",string(output))
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("process i notify",err,splitPath,cmpstr)
 		}
 	}
 }
@@ -255,13 +257,13 @@ func (epc *EPContainer) init() error {
 }
 
 func (epc *EPContainer) httpHandleRootRequest(w http.ResponseWriter) {
-	fmt.Fprintf(w, "%s\n", string(epc.JsonMarshal()))
+	fmt.Fprintf(w, "httpHandleRootRequest: %s\n", string(epc.JsonMarshal()))
 }
 
 func (epc *EPContainer) httpHandleUUIDRequest(w http.ResponseWriter,
 	uuid uuid.UUID) {
 
-	fmt.Fprintf(w, "%s\n", string(epc.JsonMarshalUUID(uuid)))
+		fmt.Fprintf(w, "httpHandleUUIDRequest: %s\n", string(epc.JsonMarshalUUID(uuid)))
 }
 
 func (epc *EPContainer) httpHandleRoute(w http.ResponseWriter, r *url.URL) {
@@ -310,14 +312,14 @@ func (epc *EPContainer) QueryHandle(w http.ResponseWriter, r *http.Request) {
 	//Decode the NISD request structure
 	requestBytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		log.Println(err)
+		log.Println("query handle a", err)
 	}
 
 	requestObj := requestResponseLib.LookoutRequest{}
 	dec := gob.NewDecoder(bytes.NewBuffer(requestBytes))
 	err = dec.Decode(&requestObj)
 	if err != nil {
-		log.Println(err)
+		log.Println("query handle b ", err)
 	}
 
 	//Call the appropriate function
@@ -436,7 +438,7 @@ func (epc *EPContainer) MetricsHandler(w http.ResponseWriter, r *http.Request) {
                                 output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDChunk[0], labelMap)
 		}
 	}
-	fmt.Fprintln(w, output)
+	fmt.Fprintf(w,"MetricHandler:%s\n", output)
 	}
 }
 
@@ -446,7 +448,7 @@ func (epc *EPContainer) serveHttp() error {
 	mux.HandleFunc("/v0/", epc.HttpHandle)
 	mux.HandleFunc("/metrics", epc.MetricsHandler)
 	for i := len(epc.PortRange) - 1; i >= 0; i-- {
-		epc.HttpPort = int(epc.PortRange[i])
+		epc.HttpPort = 6666// int(epc.PortRange[i]) replace this 
 		l, err := net.Listen("tcp", ":"+strconv.Itoa(epc.HttpPort))
 		if err != nil {
 			if strings.Contains(err.Error(), "bind") {

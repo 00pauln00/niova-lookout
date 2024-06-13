@@ -93,7 +93,7 @@ func (handler *nisdMonitor) parseCMDArgs() {
 	showHelpShort = flag.Bool("h", false, "")
 	showHelp = flag.Bool("help", false, "print help")
 
-	flag.BoolVar(&handler.standalone, "std", true, "Set flag to true to run lookout standalone for NISD")
+	flag.BoolVar(&handler.standalone, "std", true, "Set flag to true to run lookout standalone for NISD")// set to gossip and false default
 	flag.StringVar(&handler.udpPort, "u", "1054", "UDP port for NISD communication")
 	flag.StringVar(&handler.PortRangeStr, "p", "", "Port range for the lookout to export data endpoints to, should be space seperated")
 	flag.StringVar(&handler.agentName, "n", uuid.New().String(), "Agent name")
@@ -234,7 +234,7 @@ func (handler *nisdMonitor) setTags() {
 		tagData := handler.getCompressedGossipDataNISD()
 		err := handler.serfHandler.SetNodeTags(tagData)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("setTags: ",err)
 		}
 		time.Sleep(time.Duration(SetTagsInterval) * time.Second)
 	}
@@ -439,7 +439,7 @@ func main() {
 	nisd.lookout = lookout.EPContainer{
 		MonitorUUID: "*",
 		AppType:     "NISD",
-		//HttpPort:         nisd.findFreePort(),
+		HttpPort:         6666,
 		PortRange: nisd.PortRange,
 		CTLPath:   *nisd.ctlPath,
 		PromPath:  nisd.promPath,

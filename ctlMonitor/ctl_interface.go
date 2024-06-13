@@ -272,7 +272,9 @@ func (cmd *epCommand) loadOutfile() {
 
 	// Try to read the file
 	cmd.outJSON, cmd.err = ioutil.ReadFile(cmd.getOutFnam())
-
+	if cmd.err != nil{
+		log.Printf("checkOutFile(): %s getOutFnam %s", cmd.err,cmd.getOutFnam())
+	}
 	return
 }
 
@@ -392,6 +394,7 @@ func (ep *NcsiEP) update(ctlData *CtlIfOut, op EPcmdType) {
 func (ep *NcsiEP) Complete(cmdName string, output *[]byte) error {
 	cmd := ep.removeCmd(cmdName)
 	if cmd == nil {
+		*output = []byte("cmdName: "+ cmdName)
 		return syscall.ENOENT
 	}
 
