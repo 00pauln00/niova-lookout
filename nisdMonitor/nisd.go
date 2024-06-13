@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
@@ -22,6 +21,8 @@ import (
 	"strings"
 	"time"
 	"unsafe"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/google/uuid"
 )
@@ -78,7 +79,7 @@ type udpMessage struct {
 }
 
 func usage(rc int) {
-	fmt.Printf("Usage: [OPTIONS] %s\n", os.Args[0])
+	logrus.Infof("Usage: [OPTIONS] %s\n", os.Args[0])
 	flag.PrintDefaults()
 	os.Exit(rc)
 }
@@ -87,13 +88,15 @@ func (handler *nisdMonitor) parseCMDArgs() {
 	var (
 		showHelp      *bool
 		showHelpShort *bool
+		logLevel      *string
 	)
 
 	handler.ctlPath = flag.String("dir", "/tmp/.niova", "endpoint directory root")
 	showHelpShort = flag.Bool("h", false, "")
 	showHelp = flag.Bool("help", false, "print help")
+	logLevel = flag.String("log", "info", "set log level (panic, fatal, error, warn, info, debug, trace)")
 
-	flag.BoolVar(&handler.standalone, "std", true, "Set flag to true to run lookout standalone for NISD")// set to gossip and false default
+	flag.BoolVar(&handler.standalone, "std", true, "Set flag to true to run lookout standalone for NISD") // set to gossip and false default
 	flag.StringVar(&handler.udpPort, "u", "1054", "UDP port for NISD communication")
 	flag.StringVar(&handler.PortRangeStr, "p", "", "Port range for the lookout to export data endpoints to, should be space seperated")
 	flag.StringVar(&handler.agentName, "n", uuid.New().String(), "Agent name")
@@ -104,10 +107,16 @@ func (handler *nisdMonitor) parseCMDArgs() {
 	flag.StringVar(&handler.raftUUID, "r", "", "Raft UUID")
 	flag.Parse()
 
+	level, err := logrus.ParseLevel(*logLevel)
+	if err != nil {
+		logrus.Fatalf("Invalid log level: %v", err)
+	}
+	logrus.SetLevel(level)
+
 	nonParsed := flag.Args()
-	fmt.Println(nonParsed)
+	logrus.Debug("nonParsed: ", nonParsed)
 	if len(nonParsed) > 0 {
-		fmt.Println("Unexpected argument found:", nonParsed[1])
+		logrus.Debugf("Unexpected argument found: %s", nonParsed[1])
 		usage(1)
 	}
 
@@ -170,13 +179,13 @@ func (handler *nisdMonitor) getConfigNSend(udpInfo udpMessage) {
 func setLogOutput(logPath string) {
 	switch logPath {
 	case "ignore":
-		log.SetOutput(ioutil.Discard)
+		logrus.SetOutput(ioutil.Discard)
 	default:
 		f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {
-			log.SetOutput(os.Stderr)
+			logrus.SetOutput(os.Stderr)
 		} else {
-			log.SetOutput(f)
+			logrus.SetOutput(f)
 		}
 	}
 }
@@ -234,7 +243,7 @@ func (handler *nisdMonitor) setTags() {
 		tagData := handler.getCompressedGossipDataNISD()
 		err := handler.serfHandler.SetNodeTags(tagData)
 		if err != nil {
-			fmt.Println("setTags: ",err)
+			logrus.Debug("setTags: ", err)
 		}
 		time.Sleep(time.Duration(SetTagsInterval) * time.Second)
 	}
@@ -251,8 +260,7 @@ func (handler *nisdMonitor) startClientAPI() {
 	go func() {
 		err := handler.storageClient.StartClientAPI(stop, handler.gossipNodesPath)
 		if err != nil {
-			fmt.Println("Error while starting client API : ", err)
-			os.Exit(1)
+			logrus.Fatal("Error while starting client API : ", err)
 		}
 	}()
 	handler.storageClient.TillReady("", 0)
@@ -263,7 +271,7 @@ func (handler *nisdMonitor) startUDPListner() {
 	var err error
 	handler.udpSocket, err = net.ListenPacket("udp", ":"+handler.udpPort)
 	if err != nil {
-		fmt.Println("UDP listner failed : ", err)
+		logrus.Error("UDP listner failed : ", err)
 	}
 
 	defer handler.udpSocket.Close()
@@ -297,7 +305,7 @@ func (handler *nisdMonitor) getPortRange() error {
 
 	responseBytes, err := handler.requestPMDB(handler.raftUUID + "_Port_Range")
 	if err != nil {
-		fmt.Println("Request PMDB - ", err)
+		logrus.Error("Request PMDB - ", err)
 		return err
 	}
 
@@ -306,7 +314,7 @@ func (handler *nisdMonitor) getPortRange() error {
 
 	err = handler.getConfigData(string(response.ResultMap[handler.raftUUID+"_Port_Range"]))
 	if err != nil {
-		fmt.Println("getConfigData - ", err)
+		logrus.Error("getConfigData - ", err)
 	}
 
 	return nil
@@ -335,9 +343,9 @@ func (handler *nisdMonitor) checkHTTPLiveness() {
 	for {
 		_, err := httpClient.HTTP_Request(emptyByteArray, "127.0.0.1:"+strconv.Itoa(int(RecvdPort))+"/check", false)
 		if err != nil {
-			fmt.Println("HTTP Liveness - ", err)
+			logrus.Error("HTTP Liveness - ", err)
 		} else {
-			fmt.Println("HTTP Liveness - HTTP Server is alive")
+			logrus.Debug("HTTP Liveness - HTTP Server is alive")
 			break
 		}
 		time.Sleep(1 * time.Second)
@@ -347,13 +355,13 @@ func (handler *nisdMonitor) checkHTTPLiveness() {
 func (handler *nisdMonitor) findFreePort() int {
 	for i := 0; i < len(handler.PortRange); i++ {
 		handler.httpPort = int(handler.PortRange[i])
-		fmt.Println("Trying to bind with - ", int(handler.httpPort))
+		logrus.Debug("Trying to bind with - ", int(handler.httpPort))
 		check, err := net.Listen("tcp", handler.addr+":"+strconv.Itoa(int(handler.httpPort)))
 		if err != nil {
 			if strings.Contains(err.Error(), "bind") {
 				continue
 			} else {
-				fmt.Println("Error while finding port : ", err)
+				logrus.Error("Error while finding port : ", err)
 				return 0
 			}
 		} else {
@@ -361,7 +369,7 @@ func (handler *nisdMonitor) findFreePort() int {
 			break
 		}
 	}
-	fmt.Println("Returning free port - ", handler.httpPort)
+	logrus.Debug("Returning free port - ", handler.httpPort)
 	return handler.httpPort
 }
 
@@ -388,7 +396,7 @@ func (handler *nisdMonitor) loadConfigInfo() error {
 	//Read IPAddrs
 	scanner.Scan()
 	IPAddrs := strings.Split(scanner.Text(), " ")
-	fmt.Println(IPAddrs)
+	logrus.Debug("IPAddrs:", IPAddrs)
 	handler.addr = IPAddrs[0]
 
 	//Read Ports
@@ -412,8 +420,7 @@ func main() {
 
 	err := nisd.loadConfigInfo()
 	if err != nil {
-		fmt.Println("Error while loading config info - ", err)
-		os.Exit(1)
+		logrus.Fatal("Error while loading config info - ", err)
 	}
 	//Start pmdb service client discovery api
 	if !nisd.standalone {
@@ -424,8 +431,7 @@ func main() {
 		nisd.ServicePortRangeS = nisd.PortRange[0]
 		nisd.ServicePortRangeE = nisd.PortRange[len(nisd.PortRange)-1]
 		if err != nil {
-			fmt.Println("Error while starting serf agent : ", err)
-			os.Exit(1)
+			logrus.Fatal("Error while starting serf agent : ", err)
 		}
 
 		//Start udp listener
@@ -435,24 +441,23 @@ func main() {
 
 	portAddr = &RecvdPort
 	//Start lookout monitoring
-	fmt.Println(nisd.PortRange)
+	logrus.Debug("Port Range: ", nisd.PortRange)
 	nisd.lookout = lookout.EPContainer{
 		MonitorUUID: "*",
 		AppType:     "NISD",
-		HttpPort:         6666,
-		PortRange: nisd.PortRange,
-		CTLPath:   *nisd.ctlPath,
-		PromPath:  nisd.promPath,
+		HttpPort:    6666,
+		PortRange:   nisd.PortRange,
+		CTLPath:     *nisd.ctlPath,
+		PromPath:    nisd.promPath,
 		//SerfMembershipCB: nisd.SerfMembership,
 		EnableHttp: true,
 		RetPort:    portAddr,
 	}
 	errs := nisd.lookout.Start()
 	if errs != nil {
-		fmt.Println("Error while starting Lookout : ", errs)
-		os.Exit(1)
+		logrus.Fatal("Error while starting Lookout : ", errs)
 	}
-	fmt.Println("Lookout started successfully")
+	logrus.Info("Lookout started successfully")
 
 	if !nisd.standalone {
 		//Wait till http lookout http is up and running

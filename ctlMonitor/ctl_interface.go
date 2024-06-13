@@ -4,7 +4,6 @@ import (
 	//	"math/rand"
 	"encoding/json"
 	"io/ioutil"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 )
 
 // #include <unistd.h>
@@ -272,8 +272,8 @@ func (cmd *epCommand) loadOutfile() {
 
 	// Try to read the file
 	cmd.outJSON, cmd.err = ioutil.ReadFile(cmd.getOutFnam())
-	if cmd.err != nil{
-		log.Printf("checkOutFile(): %s getOutFnam %s", cmd.err,cmd.getOutFnam())
+	if cmd.err != nil {
+		logrus.Errorf("checkOutFile(): %s getOutFnam %s", cmd.err, cmd.getOutFnam())
 	}
 	return
 }
@@ -293,7 +293,7 @@ func (cmd *epCommand) prep() {
 func (cmd *epCommand) write() {
 	cmd.err = ioutil.WriteFile(cmd.getInFnam(), cmd.getCmdBuf(), 0644)
 	if cmd.err != nil {
-		log.Printf("ioutil.WriteFile(): %s", cmd.err)
+		logrus.Errorf("ioutil.WriteFile(): %s", cmd.err)
 		return
 	}
 }
@@ -374,11 +374,11 @@ func (ep *NcsiEP) update(ctlData *CtlIfOut, op EPcmdType) {
 	switch op {
 	case RaftInfoOp:
 		ep.EPInfo.RaftRootEntry = ctlData.RaftRootEntry
-		//		log.Printf("update-raft %+v \n", ctlData.RaftRootEntry)
+		logrus.Debugf("update-raft %+v \n", ctlData.RaftRootEntry)
 	case SystemInfoOp:
 		ep.EPInfo.SysInfo = ctlData.SysInfo
 		//ep.LastReport = ep.EPInfo.SysInfo.CurrentTime.WrappedTime
-		//		log.Printf("update-sys %+v \n", ctlData.SysInfo)
+		logrus.Debugf("update-sys %+v \n", ctlData.SysInfo)
 	case NISDInfoOp:
 		//update
 		ep.EPInfo.NISDInformation = ctlData.NISDInformation
@@ -386,7 +386,7 @@ func (ep *NcsiEP) update(ctlData *CtlIfOut, op EPcmdType) {
 		ep.EPInfo.SysInfo = ctlData.SysInfo
 		ep.EPInfo.NISDChunk = ctlData.NISDChunk
 	default:
-		log.Printf("invalid op=%d \n", op)
+		logrus.Debugf("invalid op=%d \n", op)
 	}
 	ep.LastReport = time.Now()
 }
@@ -394,7 +394,6 @@ func (ep *NcsiEP) update(ctlData *CtlIfOut, op EPcmdType) {
 func (ep *NcsiEP) Complete(cmdName string, output *[]byte) error {
 	cmd := ep.removeCmd(cmdName)
 	if cmd == nil {
-		*output = []byte("cmdName: "+ cmdName)
 		return syscall.ENOENT
 	}
 
@@ -413,11 +412,11 @@ func (ep *NcsiEP) Complete(cmdName string, output *[]byte) error {
 	var ctlifout CtlIfOut
 	if err = json.Unmarshal(cmd.getOutJSON(), &ctlifout); err != nil {
 		if ute, ok := err.(*json.UnmarshalTypeError); ok {
-			log.Printf("UnmarshalTypeError %v - %v - %v\n",
+			logrus.Errorf("UnmarshalTypeError %v - %v - %v\n",
 				ute.Value, ute.Type, ute.Offset)
 		} else {
-			log.Printf("Other error: %s\n", err)
-			log.Printf("Contents: %s\n", string(cmd.getOutJSON()))
+			logrus.Errorf("Other error: %s\n", err)
+			logrus.Errorf("Contents: %s\n", string(cmd.getOutJSON()))
 		}
 		return err
 	}

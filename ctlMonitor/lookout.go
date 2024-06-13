@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 )
 
 var HttpPort int
@@ -61,7 +61,7 @@ func (epc *EPContainer) tryAdd(uuid uuid.UUID) {
 		}
 
 		if err := epc.EpWatcher.Add(newlns.Path + "/output"); err != nil {
-			log.Fatal("Watcher.Add() failed:", err)
+			logrus.Fatal("Watcher.Add() failed:", err)
 		}
 
 		// serialize with readers in httpd context, this is the only
@@ -69,14 +69,14 @@ func (epc *EPContainer) tryAdd(uuid uuid.UUID) {
 		epc.mutex.Lock()
 		epc.EpMap[uuid] = &newlns
 		epc.mutex.Unlock()
-		log.Printf("added: %+v\n", newlns)
+		logrus.Debugf("added: %+v\n", newlns)
 	}
 }
 
 func (epc *EPContainer) scan() {
 	files, err := ioutil.ReadDir(epc.CTLPath)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 	}
 
 	for _, file := range files {
@@ -108,7 +108,7 @@ func (epc *EPContainer) monitor() error {
 		var sleepTime time.Duration
 		err = syscall.Stat(epc.CTLPath, &tmp_stb)
 		if err != nil {
-			log.Printf("syscall.Stat('%s'): %s", epc.CTLPath, err)
+			logrus.Errorf("syscall.Stat('%s'): %s", epc.CTLPath, err)
 			break
 		}
 
@@ -128,7 +128,7 @@ func (epc *EPContainer) monitor() error {
 		sleepTime, err = time.ParseDuration(sleepTimeStr)
 		if err != nil {
 			sleepTime = 5
-			log.Printf("Bad environment variable - Defaulting to standard value")
+			logrus.Debug("Bad environment variable - Defaulting to standard value")
 		}
 		time.Sleep((sleepTime) * time.Second)
 	}
@@ -203,9 +203,8 @@ func (epc *EPContainer) processInotifyEvent(event *fsnotify.Event) {
 	if ep := epc.EpMap[uuid]; ep != nil {
 		var output []byte
 		err := ep.Complete(cmpstr, &output)
-		fmt.Println("Complete() output: ",string(output))
 		if err != nil {
-			fmt.Println("process i notify",err,splitPath,cmpstr)
+			logrus.Debug("processInotifyEvent()", err, event.Name)
 		}
 	}
 }
@@ -221,7 +220,7 @@ func (epc *EPContainer) epOutputWatcher() {
 
 			// watch for errors
 		case err := <-epc.EpWatcher.Errors:
-			fmt.Println("ERROR", err)
+			logrus.Error("EpWatcher pipe: ", err)
 
 		}
 	}
@@ -312,14 +311,14 @@ func (epc *EPContainer) QueryHandle(w http.ResponseWriter, r *http.Request) {
 	//Decode the NISD request structure
 	requestBytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		log.Println("query handle a", err)
+		logrus.Error("ioutil.ReadAll(r.Body):", err)
 	}
 
 	requestObj := requestResponseLib.LookoutRequest{}
 	dec := gob.NewDecoder(bytes.NewBuffer(requestBytes))
 	err = dec.Decode(&requestObj)
 	if err != nil {
-		log.Println("query handle b ", err)
+		logrus.Error("dec.Decode(&requestObj): ", err)
 	}
 
 	//Call the appropriate function
@@ -448,19 +447,19 @@ func (epc *EPContainer) serveHttp() error {
 	mux.HandleFunc("/v0/", epc.HttpHandle)
 	mux.HandleFunc("/metrics", epc.MetricsHandler)
 	for i := len(epc.PortRange) - 1; i >= 0; i-- {
-		epc.HttpPort = 6666// int(epc.PortRange[i]) replace this 
+		epc.HttpPort = 6666 // int(epc.PortRange[i]) replace this
 		l, err := net.Listen("tcp", ":"+strconv.Itoa(epc.HttpPort))
 		if err != nil {
 			if strings.Contains(err.Error(), "bind") {
 				continue
 			} else {
-				fmt.Println("Error while starting lookout - ", err)
+				logrus.Error("Error while starting lookout - ", err)
 				return err
 			}
 		} else {
 			go func() {
 				*epc.RetPort = epc.HttpPort
-				fmt.Println("Serving at - ", epc.HttpPort)
+				logrus.Info("Serving at - ", epc.HttpPort)
 				http.Serve(l, mux)
 			}()
 		}
@@ -524,9 +523,6 @@ func (epc *EPContainer) Start() error {
 		}
 	}
 
-	fmt.Println("============================")
-	fmt.Println(epc.HttpPort)
-	fmt.Println("============================")
 	err = epc.writePromPath()
 	if err != nil {
 		return err
@@ -534,14 +530,14 @@ func (epc *EPContainer) Start() error {
 	//Setup lookout
 	err = epc.init()
 	if err != nil {
-		log.Printf("Lookout Init - ", err)
+		logrus.Debug("Lookout Init - ", err)
 		return err
 	}
 
 	//Start monitoring
 	err = epc.monitor()
 	if err != nil {
-		log.Printf("Lookout Monitor - ", err)
+		logrus.Debug("Lookout Monitor - ", err)
 		return err
 	}
 
