@@ -24,7 +24,7 @@ func parseHistogram(histogram reflect.Value, histogramType reflect.Type) map[str
 		bucketBound := histogramType.Field(i)
 		bucketValue := histogram.Field(i)
 		//Discard intervals with 0 value
-		if(int(bucketValue.Int()) != 0) {
+		if int(bucketValue.Int()) != 0 {
 			count := int(bucketValue.Int())
 			upperBound := strings.Split(bucketBound.Tag.Get("json"), ",")[0]
 			histoMap[upperBound] = fmt.Sprintf("%v", bucketValue)
@@ -69,7 +69,7 @@ func makePromHistogram(metric string, label string, histogram map[string]string)
 	sort.Strings(bounds)
 
 	for _, bound := range bounds {
-		entry := fmt.Sprintf(`%s_bucket{%sle="%s"} %s`, metric, label, bound, histogram[bound])
+		entry := fmt.Sprintf(`%s_bucket{%s,le="%s"} %s`, metric, label, bound, histogram[bound])
 		output += "\n" + entry
 	}
 	entry := fmt.Sprintf("%s_count %s", metric, histogram["+inf"])
@@ -87,11 +87,11 @@ func makePromGauge(metric string, label string, value string) string {
 }
 
 func makeLabelString(label map[string]string) string {
-	output := ""
+	var output []string
 	for key, value := range label {
-		output += fmt.Sprintf(`%s="%s"`, key, value)
+		output = append(output, fmt.Sprintf(`%s="%s"`, key, value))
 	}
-	return output
+	return strings.Join(output, ",")
 }
 
 func GenericPromDataParser(structure interface{}, labels map[string]string) string {

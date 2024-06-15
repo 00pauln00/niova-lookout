@@ -262,7 +262,7 @@ func (epc *EPContainer) httpHandleRootRequest(w http.ResponseWriter) {
 func (epc *EPContainer) httpHandleUUIDRequest(w http.ResponseWriter,
 	uuid uuid.UUID) {
 
-		fmt.Fprintf(w, "httpHandleUUIDRequest: %s\n", string(epc.JsonMarshalUUID(uuid)))
+	fmt.Fprintf(w, "httpHandleUUIDRequest: %s\n", string(epc.JsonMarshalUUID(uuid)))
 }
 
 func (epc *EPContainer) httpHandleRoute(w http.ResponseWriter, r *url.URL) {
@@ -431,13 +431,13 @@ func (epc *EPContainer) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 			// Parse nisd system info
 			output += prometheus_handler.GenericPromDataParser(node.EPInfo.SysInfo, labelMap)
 			// Parse nisd chunk info
-			if len(node.EPInfo.NISDChunk) == 0{
-                                continue
-                        } else{
-                                output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDChunk[0], labelMap)
+			if len(node.EPInfo.NISDChunk) == 0 {
+				continue
+			} else {
+				output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDChunk[0], labelMap)
+			}
 		}
-	}
-	fmt.Fprintf(w,"MetricHandler:%s\n", output)
+		fmt.Fprintf(w, "%s", output)
 	}
 }
 
