@@ -423,18 +423,26 @@ func (epc *EPContainer) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 		for uuid, node := range nodeMap {
 			labelMap["NISD_UUID"] = uuid.String()
 			labelMap["TYPE"] = epc.AppType
-			labelMap = loadNISDLabelMap(labelMap, node.EPInfo.NISDRootEntry[0])
-			// Parse NISDInfo
-			output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDInformation[0], labelMap)
-			// Parse NISDRootEntry
-			output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDRootEntry[0], labelMap)
-			// Parse nisd system info
-			output += prometheus_handler.GenericPromDataParser(node.EPInfo.SysInfo, labelMap)
-			// Parse nisd chunk info
-			if len(node.EPInfo.NISDChunk) == 0 {
+			// print out node info for debugging
+			logrus.Debug("NISD UUID: ", uuid)
+			logrus.Debug("NISD Info: ", node.EPInfo)
+			// Load labelMap with NISD data if present
+			if condition := len(node.EPInfo.NISDInformation) == 0; condition {
 				continue
 			} else {
-				output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDChunk[0], labelMap)
+				labelMap = loadNISDLabelMap(labelMap, node.EPInfo.NISDRootEntry[0])
+				// Parse NISDInfo
+				output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDInformation[0], labelMap)
+				// Parse NISDRootEntry
+				output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDRootEntry[0], labelMap)
+				// Parse nisd system info
+				output += prometheus_handler.GenericPromDataParser(node.EPInfo.SysInfo, labelMap)
+				// Parse nisd chunk info
+				if len(node.EPInfo.NISDChunk) == 0 {
+					continue
+				} else {
+					output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDChunk[0], labelMap)
+				}
 			}
 		}
 		fmt.Fprintf(w, "%s", output)
