@@ -324,8 +324,8 @@ func (cmd *epCommand) loadOutfile() {
 // Makes a 'unique' filename for the command and adds it to the map
 func (cmd *epCommand) prep() {
 	if cmd.fn == "" {
-		cmd.fn = "lookout_ncsiep_" + strconv.FormatInt(int(os.Getpid()), 10) +
-			"_" + strconv.FormatInt(int(time.Now().Nanosecond()), 10)
+		cmd.fn = "lookout_ncsiep_" + strconv.FormatInt(int64(os.Getpid()), 10) +
+			"_" + strconv.FormatInt(int64(time.Now().Nanosecond()), 10)
 	}
 	cmd.cmd = cmd.cmd + "\nOUTFILE /" + cmd.fn + "\n"
 
