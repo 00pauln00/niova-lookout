@@ -427,7 +427,7 @@ func (epc *EPContainer) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 			logrus.Debug("NISD UUID: ", uuid)
 			logrus.Debug("NISD Info: ", node.EPInfo)
 			// Load labelMap with NISD data if present
-			if condition := len(node.EPInfo.NISDInformation) == 0; condition {
+			if condition := len(node.EPInfo.NISDRootEntry) == 0; condition {
 				continue
 			} else {
 				labelMap = loadNISDLabelMap(labelMap, node.EPInfo.NISDRootEntry[0])
