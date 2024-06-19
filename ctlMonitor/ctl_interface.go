@@ -89,26 +89,39 @@ type NISDRoot struct {
 }
 
 type NISDChunkInfo struct {
-	NumDataPblks         int `json:"num-data-pblks" type:"counter" metric:"nisd_chunk_num_data_pblks"`
-	NumMetaPblks         int `json:"num-meta-pblks" type:"counter" metric:"nisd_chunk_num_meta_pblks"`
-	NumReservedMetaPblks int `json:"num-reserved-meta-pblks" type:"counter" metric:"nisd_chunk_num_reserved_meta_pblks"`
-	//ChunkMergeCnt        int    `json:"chunk-merge-cnt" type:"counter" metric:"nisd_chunk_chunk_merge_cnt"`
-	MergeShallowCnt int `json:"merge-shallow-cnt" type:"counter" metric:"nisd_chunk_merge_shallow_cnt"`
-	MergeFullCnt    int `json:"merge-full-cnt" type:"counter" metric:"nisd_chunk_merge_full_cnt"`
-	VblkRead        int `json:"vblks-read" type:"counter" metric:"nisd_chunk_vblks_read"`
-	VblkWritten     int `json:"vblks-written" type:"counter" metric:"nisd_chunk_vblks_written"`
-	//ChunkMergeStatus     string `json:"chunk-merge-status" type:"counter" metric:"nisd_chunk_chunk_merge_status`
-	//MergeShallowStatus string `json:"merge-shallow-status" type:"counter" metric:"nisd_chunk_merge_shallow_status"`
-	//MergeFullStatus    string `json:"merge-full-status" type:"counter" metric:"nisd_chunk_merge_full_status"` status will be handled with bool values for its current state
-	MetablockSeqn int `json:"metablock-seqno" type:"counter" metric:"nisd_chunk_metablock_seqno"`
-	//ReadOpSeqno          int    `json:"read-op-seqno" type:"counter" metric:"nisd_chunk_read_op_seq"`
-	//MergeReadOpSeqno     int    `json:"merge-read-op-seqno" type:"counter" metric:"nisd_chunk_merge_read_op_seqno"`
-	S3SyncSeqno         int `json:"s3-sync-seqno" type:"counter" metric:"nisd_chunk_s3_sync_seqno"`
-	ClientRecoverySeqno int `json:"client-recovery-seqno" type:"counter" metric:"nisd_chunk_client_recovery_seqno"`
-	NumCme              int `json:"num-cme" type:"counter" metric:"nisd_chunk_num_cme"`
-	RefCnt              int `json:"ref-cnt" type:"counter" metric:"nisd_chunk_ref_cnt"`
-	McibHits            int `json:"mcib-hits" type:"counter" metric:"nisd_chunk_mcib_hits"`
-	mcibMisses          int `json:"mcib-misses" type:"counter" metric:"nisd_chunk_mcib_misses"`
+	VdevUUID                   string `json:"vdev-uuid"`
+	Number                     int    `json:"number" type:"gauge" metric:"nisd_chunk_number"`
+	Tier                       int    `json:"tier" type:"gauge" metric:"nisd_chunk_tier"`
+	Type                       int    `json:"type" type:"gauge" metric:"nisd_chunk_type"`
+	NumDataPblks               int    `json:"num-data-pblks" type:"counter" metric:"nisd_chunk_num_data_pblks"`
+	NumMetaPblks               int    `json:"num-meta-pblks" type:"counter" metric:"nisd_chunk_num_meta_pblks"`
+	NumMcibPblks               int    `json:"num-mcib-pblks" type:"counter" metric:"nisd_chunk_num_mcib_pblks"`
+	NumReservedMetaPblks       int    `json:"num-reserved-meta-pblks" type:"counter" metric:"nisd_chunk_num_reserved_meta_pblks"`
+	NumTypical2ReservedMbLinks int    `json:"num-typical-2-reserved-mb-links" type:"counter" metric:"nisd_chunk_num_typical_2_reserved_mb_links"`
+	VblksRead                  int    `json:"vblks-read" type:"counter" metric:"nisd_chunk_vblks_read"`
+	VblksWritten               int    `json:"vblks-written" type:"counter" metric:"nisd_chunk_vblks_written"`
+	VblksPeerSent              int    `json:"vblks-peer-sent" type:"counter" metric:"nisd_chunk_vblks_peer_sent"`
+	VblksPeerRecvd             int    `json:"vblks-peer-recvd" type:"counter" metric:"nisd_chunk_vblks_peer_recvd"`
+	MergeShallowCnt            int    `json:"merge-shallow-cnt" type:"counter" metric:"nisd_chunk_merge_shallow_cnt"`
+	MergeShallowStatus         string `json:"merge-shallow-status"`
+	MergeFullCnt               int    `json:"merge-full-cnt" type:"counter" metric:"nisd_chunk_merge_full_cnt"`
+	MergeFullCompletedCnt      int    `json:"merge-full-completed-cnt" type:"counter" metric:"nisd_chunk_merge_full_completed_cnt"`
+	MergeFullStatus            string `json:"merge-full-status"`
+	MergeFence                 int    `json:"merge-fence" type:"counter" metric:"nisd_chunk_merge_fence"`
+	ClientRecoverySeqno        int    `json:"client-recovery-seqno" type:"counter" metric:"nisd_chunk_client_recovery_seqno"`
+	MetablockSeqn              int    `json:"metablock-seqno" type:"counter" metric:"nisd_chunk_metablock_seqno"`
+	S3SyncSeqno                int    `json:"s3-sync-seqno" type:"counter" metric:"nisd_chunk_s3_sync_seqno"`
+	S3SyncState                string `json:"s3-sync-state"`
+	NumCme                     int    `json:"num-cme" type:"counter" metric:"nisd_chunk_num_cme"`
+	RefCnt                     int    `json:"ref-cnt" type:"counter" metric:"nisd_chunk_ref_cnt"`
+	OooMbSyncCnt               int    `json:"ooo-mb-sync-cnt" type:"counter" metric:"nisd_chunk_ooo_mb_sync_cnt"`
+	OooMbSyncNewMpblkCnt       int    `json:"ooo-mb-sync-new-mpblk-cnt" type:"counter" metric:"nisd_chunk_ooo_mb_sync_new_mpblk_cnt"`
+	McibHits                   int    `json:"mcib-hits" type:"counter" metric:"nisd_chunk_mcib_hits"`
+	McibMisses                 int    `json:"mcib-misses" type:"counter" metric:"nisd_chunk_mcib_misses"`
+	McibSectorReads            int    `json:"mcib-sector-reads" type:"counter" metric:"nisd_chunk_mcib_sector_reads"`
+	McibSectorWrites           int    `json:"mcib-sector-writes" type:"counter" metric:"nisd_chunk_mcib_sector_writes"`
+	StashPblk                  int    `json:"stash-pblk" type:"counter" metric:"nisd_chunk_stash_pblk"`
+	StashPblkStates            string `json:"stash-pblk-states"`
 }
 
 type Histogram struct {
