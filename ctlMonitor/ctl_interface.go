@@ -56,36 +56,61 @@ type SystemInfo struct {
 }
 
 type NISDInfo struct {
-	ReadBytes          int       `json:"dev-bytes-read" type:"counter" metric:"nisd_dev_read_bytes"`
-	WriteBytes         int       `json:"dev-bytes-write" type:"counter" metric:"nisd_dev_write_bytes"`
-	NetRecvBytes       int       `json:"net-bytes-recv" type:"counter" metric:"nisd_net_bytes_recv"`
-	NetSendBytes       int       `json:"net-bytes-send" type:"counter" metric:"nisd_net_bytes_send"`
-	DevRdLatencyUsec   Histogram `json:"dev-rd-latency-usec" type:"histogram" metric:"nisd_dev_rd_latency_usec"`
-	DevWrLatencyUsec   Histogram `json:"dev-wr-latency-usec" type:"histogram" metric:"nisd_dev_wr_latency_usec"`
-	DevReadSize        Histogram `json:"dev-rd-size" type:"histogram" metric:"nisd_dev_rd_size"`
-	DevWriteSize       Histogram `json:"dev-wr-size" type:"histogram" metric:"nisd_dev_wr_size"`
-	NetRecvSize        Histogram `json:"net-recv-size" type:"histogram" metric:"nisd_net_recv_size"`
-	NetSendSize        Histogram `json:"net-send-size" type:"histogram" metric:"nisd_net_send_size"`
-	NetRecvLatencyUsec Histogram `json:"net-recv-latency-usec" type:"histogram" metric:"nisd_net_recv_latency_usec"`
-	NetSendLatencyUsec Histogram `json:"net-send-latency-usec" type:"histogram" metric:"nisd_net_send_latency_usec"`
+	UUID                  string    `json:"uuid"`
+	DevPath               string    `json:"dev-path"`
+	ServerMode            bool      `json:"server-mode"`
+	Status                string    `json:"status"`
+	ReadBytes             int       `json:"dev-bytes-read" type:"counter" metric:"nisd_dev_read_bytes"`
+	WriteBytes            int       `json:"dev-bytes-write" type:"counter" metric:"nisd_dev_write_bytes"`
+	NetRecvBytes          int       `json:"net-bytes-recv" type:"counter" metric:"nisd_net_bytes_recv"`
+	NetSendBytes          int       `json:"net-bytes-send" type:"counter" metric:"nisd_net_bytes_send"`
+	DevRdSize             Histogram `json:"dev-rd-size" type:"histogram" metric:"nisd_dev_rd_size"`
+	DevWrSize             Histogram `json:"dev-wr-size" type:"histogram" metric:"nisd_dev_wr_size"`
+	NetRecvSize           Histogram `json:"net-recv-size" type:"histogram" metric:"nisd_net_recv_size"`
+	NetSendSize           Histogram `json:"net-send-size" type:"histogram" metric:"nisd_net_send_size"`
+	DevRdLatencyUsec      Histogram `json:"dev-rd-latency-usec" type:"histogram" metric:"nisd_dev_rd_latency_usec"`
+	DevWrLatencyUsec      Histogram `json:"dev-wr-latency-usec" type:"histogram" metric:"nisd_dev_wr_latency_usec"`
+	NetRecvLatencyUsec    Histogram `json:"net-recv-latency-usec" type:"histogram" metric:"nisd_net_recv_latency_usec"`
+	NetSendLatencyUsec    Histogram `json:"net-send-latency-usec" type:"histogram" metric:"nisd_net_send_latency_usec"`
+	IOReqLatencyUsec      Histogram `json:"io-req-latency-usec" type:"histogram" metric:"nisd_io_req_latency_usec"`
+	NIOPWaitLatencyUsec   Histogram `json:"niop-wait-latency-usec" type:"histogram" metric:"nisd_niop_wait_latency_usec"`
+	NIOPUringLatencyUsec  Histogram `json:"niop-uring-latency-usec" type:"histogram" metric:"nisd_niop_uring_latency_usec"`
+	NumSubSQEs            Histogram `json:"num-sub-sqes" type:"histogram" metric:"nisd_num_sub_sqes"`
+	NumWaitCQEs           Histogram `json:"num-wait-cqes" type:"histogram" metric:"nisd_num_wait_cqes"`
+	UringNetResubmissions Histogram `json:"uring-net-resubmissions" type:"histogram" metric:"nisd_uring_net_resubmissions"`
+	UringDevResubmissions Histogram `json:"uring-dev-resubmissions" type:"histogram" metric:"nisd_uring_dev_resubmissions"`
+	UringFixedBuf         Histogram `json:"uring-fixed-buf" type:"histogram" metric:"nisd_uring_fixed_buf"`
+	UringNumIOVs          Histogram `json:"uring-num-iovs" type:"histogram" metric:"nisd_uring_num_iovs"`
 }
 
 type NISDRoot struct {
-	VBlockWritten         int    `json:"vblks-written" type:"counter" metric:"nisd_vblk_write"`
-	VBlockRead            int    `json:"vblks-read" type:"counter" metric:"nisd_vblk_read"`
-	VBlockHoleRead        int    `json:"vblks-hole-read" type:"gauge" metric:"nisd_vblk_hole_read"`
-	VBlockReplicationSent int    `json:"s3-sync-send-bytes" type:"gauge" metric:"nisd_vblk_replication_sent"` // was vblks-replication-sent
-	VBlockReplicationRecv int    `json:"s3-sync-vblks-read" type:"gauge" metric:"nisd_vblk_replication_recv"` //vblks-replication-recv
-	MetablockWritten      int    `json:"metablock-sectors-written" type:"counter" metric:"nisd_metablock_wriitten"`
-	MetablockRead         int    `json:"metablcock-sectors-read" type:"counter" metric:"nisd_metablock_read"`
-	MetablockCacheHit     int    `json:"metablock-cache-hits" type:"counter" metric:"nisd_metablock_cache_hits"`
-	MetablockCacheMiss    int    `json:"metablock-cache-misses" type:"counter" metric:"nisd_metablock_cache_misses"`
-	NumPblks              int    `json:"num-pblks" type:"counter" metric:"nisd_num_pblk"`
-	NumPblksUsed          int    `json:"num-pblks-used" type:"counter" metric:"nisd_num_pblk_used"`
-	NumReservedPblks      int    `json:"num-reserved-pblks" type:"counter" metric:"nisd_num_reserved_pblks"`
-	NumReservedPblksUsed  int    `json:"num-reserved-pblks-used" type:"counter" metric:"nisd_num_reserved_pblks_used"`
-	Status                string `json:"status"`
-	AltName               string `json:"alt-name"`
+	UUID                    string    `json:"uuid"`
+	InstanceUUID            string    `json:"instance-uuid"`
+	Status                  string    `json:"status"`
+	VBlockRead              int       `json:"vblks-read" type:"counter" metric:"nisd_vblk_read"`
+	VBlockHoleRead          int       `json:"vblks-hole-read" type:"gauge" metric:"nisd_vblk_hole_read"`
+	VBlockWritten           int       `json:"vblks-written" type:"counter" metric:"nisd_vblk_write"`
+	S3SyncSendBytes         int       `json:"s3-sync-send-bytes" type:"gauge" metric:"nisd_s3_sync_send_bytes"`
+	S3SyncVBlksRead         int       `json:"s3-sync-vblks-read" type:"gauge" metric:"nisd_s3_sync_vblks_read"`
+	MetablockSectorsRead    int       `json:"metablock-sectors-read" type:"counter" metric:"nisd_metablock_sectors_read"`
+	MetablockSectorsWritten int       `json:"metablock-sectors-written" type:"counter" metric:"nisd_metablock_sectors_written"`
+	MetablockCacheHits      int       `json:"metablock-cache-hits" type:"counter" metric:"nisd_metablock_cache_hits"`
+	MetablockCacheMisses    int       `json:"metablock-cache-misses" type:"counter" metric:"nisd_metablock_cache_misses"`
+	ChunkMergeQLen          int       `json:"chunk-mergeq-len" type:"gauge" metric:"nisd_chunk_mergeq_len"`
+	NumReservedPblks        int       `json:"num-reserved-pblks" type:"counter" metric:"nisd_num_reserved_pblks"`
+	NumReservedPblksUsed    int       `json:"num-reserved-pblks-used" type:"counter" metric:"nisd_num_reserved_pblks_used"`
+	NumPblks                int       `json:"num-pblks" type:"counter" metric:"nisd_num_pblks"`
+	NumPblksUsed            int       `json:"num-pblks-used" type:"counter" metric:"nisd_num_pblks_used"`
+	ReleaseObjBusy          int       `json:"release-obj-busy" type:"gauge" metric:"nisd_release_obj_busy"`
+	ReleaseXtraObjBusy      int       `json:"release-xtra-obj-busy" type:"gauge" metric:"nisd_release_xtra_obj_busy"`
+	ReleaseObjTotal         int       `json:"release-obj-total" type:"counter" metric:"nisd_release_obj_total"`
+	ReleaseXtraObjTotal     int       `json:"release-xtra-obj-total" type:"counter" metric:"nisd_release_xtra_obj_total"`
+	ShallowMergeInProgress  int       `json:"shallow-merge-in-progress" type:"gauge" metric:"nisd_shallow_merge_in_progress"`
+	AltName                 string    `json:"alt-name"`
+	VBlkMetaReadSectors     Histogram `json:"vblk-meta-read-sectors" type:"histogram" metric:"nisd_vblk_meta_read_sectors"`
+	MCIBMetaReadSectors     Histogram `json:"mcib-meta-read-sectors" type:"histogram" metric:"nisd_mcib_meta_read_sectors"`
+	FullCompactionMsec      Histogram `json:"full-compaction-msec" type:"histogram" metric:"nisd_full_compaction_msec"`
+	ShallowCompactionMsec   Histogram `json:"shallow-compaction-msec" type:"histogram" metric:"nisd_shallow_compaction_msec"`
 }
 
 type NISDChunkInfo struct {
@@ -159,11 +184,11 @@ type RaftInfo struct {
 	Term                     int       `json:"term" type:"gauge" metric:"PMDB_term"`
 	CommitIdx                int       `json:"commit-idx" type:"gauge" metric:"PMDB_commitIdx"`
 	LastApplied              int       `json:"last-applied" type:"gauge" metric:"PMDB_last_applied"`
-	LastAppliedCumulativeCrc int64     `json:"last-applied-cumulative-crc" type:"gauge" metric:"PMDB_last_applied_cumulative_crc"`
+	LastAppliedCumulativeCrc int       `json:"last-applied-cumulative-crc" type:"gauge" metric:"PMDB_last_applied_cumulative_crc"`
 	NewestEntryIdx           int       `json:"newest-entry-idx" type:"gauge" metric:"PMDB_newest_entry_idx"`
 	NewestEntryTerm          int       `json:"newest-entry-term" type:"gauge" metric:"PMDB_newest_entry_term"`
 	NewestEntryDataSize      int       `json:"newest-entry-data-size" type:"gauge" metric:"PMDB_newest_entry_data_size"`
-	NewestEntryCrc           int64     `json:"newest-entry-crc" type:"gauge" metric:"PMDB_newest_entry_crc"`
+	NewestEntryCrc           int       `json:"newest-entry-crc" type:"gauge" metric:"PMDB_newest_entry_crc"`
 	DevReadLatencyUsec       Histogram `json:"dev-read-latency-usec" type:"histogram" metric:"dev_read_latency_usec"`
 	DevWriteLatencyUsec      Histogram `json:"dev-write-latency-usec" type:"histogram" metric:"dev_write_latency_usec"`
 	FollowerStats            []struct {
@@ -299,8 +324,8 @@ func (cmd *epCommand) loadOutfile() {
 // Makes a 'unique' filename for the command and adds it to the map
 func (cmd *epCommand) prep() {
 	if cmd.fn == "" {
-		cmd.fn = "lookout_ncsiep_" + strconv.FormatInt(int64(os.Getpid()), 10) +
-			"_" + strconv.FormatInt(int64(time.Now().Nanosecond()), 10)
+		cmd.fn = "lookout_ncsiep_" + strconv.FormatInt(int(os.Getpid()), 10) +
+			"_" + strconv.FormatInt(int(time.Now().Nanosecond()), 10)
 	}
 	cmd.cmd = cmd.cmd + "\nOUTFILE /" + cmd.fn + "\n"
 
