@@ -127,10 +127,10 @@ func (epc *EPContainer) monitor() error {
 		sleepTimeStr := os.Getenv("NISD_LOOKOUT_SLEEP")
 		sleepTime, err = time.ParseDuration(sleepTimeStr)
 		if err != nil {
-			sleepTime = 5
+			sleepTime = 5 * time.Second
 			logrus.Debug("Bad environment variable - Defaulting to standard value")
 		}
-		time.Sleep((sleepTime) * time.Second)
+		time.Sleep(sleepTime)
 	}
 
 	return err
