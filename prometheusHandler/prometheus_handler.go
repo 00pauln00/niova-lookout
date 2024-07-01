@@ -13,13 +13,20 @@ type prometheusClient struct {
 	Label      map[string]string
 }
 
+type prometheusHistInfo struct {
+	histoMap         map[string]string
+	totalObservation int
+}
+
 func parseCounter(count reflect.Value) string {
 	return fmt.Sprintf("%v", count)
 }
 
-func parseHistogram(histogram reflect.Value, histogramType reflect.Type) map[string]string {
-	histoMap := make(map[string]string)
-	totalObservation := 0
+func parseHistogram(histogram reflect.Value, histogramType reflect.Type) prometheusHistInfo {
+	prometheusHistInfo := prometheusHistInfo{
+		histoMap:         make(map[string]string),
+		totalObservation: 0,
+	}
 	for i := 0; i < histogram.NumField(); i++ {
 		bucketBound := histogramType.Field(i)
 		bucketValue := histogram.Field(i)
@@ -27,12 +34,11 @@ func parseHistogram(histogram reflect.Value, histogramType reflect.Type) map[str
 		if int(bucketValue.Int()) != 0 {
 			count := int(bucketValue.Int())
 			upperBound := strings.Split(bucketBound.Tag.Get("json"), ",")[0]
-			histoMap[upperBound] = fmt.Sprintf("%v", bucketValue)
-			totalObservation += count
+			prometheusHistInfo.histoMap[upperBound] = fmt.Sprintf("%v", bucketValue)
+			prometheusHistInfo.totalObservation += count
 		}
 	}
-	histoMap["+inf"] = strconv.Itoa(int(totalObservation))
-	return histoMap
+	return prometheusHistInfo
 }
 
 func parseGauge(gauge reflect.Value) string {
@@ -56,23 +62,28 @@ func makePromCounter(metric string, label string, count string) string {
 	return entry + "\n"
 }
 
-func makePromHistogram(metric string, label string, histogram map[string]string) string {
+func makePromHistogram(metric string, label string, histogramInfo prometheusHistInfo) string {
 	output := fmt.Sprintf(`
 # HELP %s histogram output
 # TYPE %s histogram`, metric, metric)
 
+	//Seperate the histogram info
+	histogram := histogramInfo.histoMap
+	totalObservations := histogramInfo.totalObservation
+
 	//Sort bound
-	var bounds []string
-	for bound, _ := range histogram {
+	var bounds []int
+	for boundStr, _ := range histogram {
+		bound, _ := strconv.Atoi(boundStr)
 		bounds = append(bounds, bound)
 	}
-	sort.Strings(bounds)
+	sort.Ints(bounds)
 
 	for _, bound := range bounds {
-		entry := fmt.Sprintf(`%s_bucket{%s,le="%s"} %s`, metric, label, bound, histogram[bound])
+		entry := fmt.Sprintf(`%s_bucket{%s,ge="%d"} %s`, metric, label, bound, histogram[strconv.Itoa(bound)])
 		output += "\n" + entry
 	}
-	entry := fmt.Sprintf("%s_count %s", metric, histogram["+inf"])
+	entry := fmt.Sprintf("%s_count %s", metric, strconv.Itoa(totalObservations))
 	output += "\n\n" + entry + "\n"
 	return output
 }
@@ -111,8 +122,8 @@ func GenericPromDataParser(structure interface{}, labels map[string]string) stri
 		promMetric := fieldType.Tag.Get("metric")
 		switch promType {
 		case "histogram":
-			histogram := parseHistogram(fieldValue, fieldType.Type)
-			op += makePromHistogram(promMetric, labelString, histogram)
+			histogramInfo := parseHistogram(fieldValue, fieldType.Type)
+			op += makePromHistogram(promMetric, labelString, histogramInfo)
 		case "counter":
 			count := parseCounter(fieldValue)
 			op += makePromCounter(promMetric, labelString, count)
