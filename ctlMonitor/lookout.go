@@ -329,8 +329,8 @@ func (epc *EPContainer) QueryHandle(w http.ResponseWriter, r *http.Request) {
 
 func loadSystemInfo(labelMap map[string]string, sysInfo SystemInfo) map[string]string {
 	labelMap["NODE_NAME"] = sysInfo.UtsNodename
-	labelMap["SYS_NAME"] = sysInfo.UtsSysname
-	labelMap["MACHINE"] = sysInfo.UtsMachine
+	//labelMap["SYS_NAME"] = sysInfo.UtsSysname
+	//labelMap["MACHINE"] = sysInfo.UtsMachine
 
 	return labelMap
 }
@@ -346,7 +346,7 @@ func loadPMDBLabelMap(labelMap map[string]string, raftEntry RaftInfo) map[string
 }
 
 func loadNISDLabelMap(labelMap map[string]string, nisdRootEntry NISDRoot) map[string]string {
-	labelMap["STATUS"] = nisdRootEntry.Status
+	//labelMap["STATUS"] = nisdRootEntry.Status
 	labelMap["ALT_NAME"] = nisdRootEntry.AltName
 
 	return labelMap
@@ -437,11 +437,13 @@ func (epc *EPContainer) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 				output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDRootEntry[0], labelMap)
 				// Parse nisd system info
 				output += prometheus_handler.GenericPromDataParser(node.EPInfo.SysInfo, labelMap)
-				// Parse nisd chunk info
-				if len(node.EPInfo.NISDChunk) == 0 {
-					continue
-				} else {
-					output += prometheus_handler.GenericPromDataParser(node.EPInfo.NISDChunk[0], labelMap)
+				// Iterate and parse each NISDChunk if populated
+				for _, chunk := range node.EPInfo.NISDChunk {
+					// load labelMap with NISD chunk data
+					labelMap["VDEV_UUID"] = chunk.VdevUUID
+					labelMap["CHUNK_NUM"] = strconv.Itoa(chunk.Number)
+					// Parse each nisd chunk info
+					output += prometheus_handler.GenericPromDataParser(chunk, labelMap)
 				}
 			}
 		}

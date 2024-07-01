@@ -115,7 +115,7 @@ type NISDRoot struct {
 
 type NISDChunkInfo struct {
 	VdevUUID                   string `json:"vdev-uuid"`
-	Number                     int    `json:"number" type:"gauge" metric:"nisd_chunk_number"`
+	Number                     int    `json:"number"`
 	Tier                       int    `json:"tier" type:"gauge" metric:"nisd_chunk_tier"`
 	Type                       int    `json:"type" type:"gauge" metric:"nisd_chunk_type"`
 	NumDataPblks               int    `json:"num-data-pblks" type:"counter" metric:"nisd_chunk_num_data_pblks"`
