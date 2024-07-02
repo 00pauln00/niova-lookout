@@ -125,6 +125,8 @@ func (epc *EPContainer) monitor() error {
 
 		//TODO Change env variable to LOOKOUT SLEEP
 		sleepTimeStr := os.Getenv("NISD_LOOKOUT_SLEEP")
+		fmt.Println("All environment variables:", os.Environ())
+		logrus.Debug("Sleep time: ", sleepTimeStr)
 		sleepTime, err = time.ParseDuration(sleepTimeStr)
 		if err != nil {
 			sleepTime = 5 * time.Second
