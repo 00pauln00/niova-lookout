@@ -151,12 +151,12 @@ type NISDChunkInfo struct {
 
 type BufferSetNodes struct {
 	Name          string `json:"name"`
-	BufSize       int    `json:"buf-size" type:"counter" metric:"buf_size"`
-	NumBufs       int    `json:"num-bufs" type:"counter" metric:"num_bufs"`
-	InUse         int    `json:"in-use" type:"gauge" metric:"in_use"`
-	TotalUsed     int    `json:"total-used" type:"counter" metric:"total_used"`
-	MaxInUse      int    `json:"max-in-use" type:"counter" metric:"max_in_use"`
-	NumUserCached int    `json:"num-user-cached" type:"counter" metric:"num_user_cached"`
+	BufSize       int    `json:"buf-size" type:"counter" metric:"buf_set_node_size"`
+	NumBufs       int    `json:"num-bufs" type:"counter" metric:"buf_set_node_num_bufs"`
+	InUse         int    `json:"in-use" type:"gauge" metric:"buf_set_node_in_use"`
+	TotalUsed     int    `json:"total-used" type:"counter" metric:"buf_set_node_total_used"`
+	MaxInUse      int    `json:"max-in-use" type:"counter" metric:"buf_set_node_max_in_use"`
+	NumUserCached int    `json:"num-user-cached" type:"counter" metric:"buf_set_node_num_user_cached"`
 }
 
 type Histogram struct {
