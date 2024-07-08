@@ -149,6 +149,16 @@ type NISDChunkInfo struct {
 	StashPblkStates            string `json:"stash-pblk-states"`
 }
 
+type BufferSetNodes struct {
+	Name          string `json:"name"`
+	BufSize       int    `json:"buf-size" type:"counter" metric:"buf_size"`
+	NumBufs       int    `json:"num-bufs" type:"counter" metric:"num_bufs"`
+	InUse         int    `json:"in-use" type:"gauge" metric:"in_use"`
+	TotalUsed     int    `json:"total-used" type:"counter" metric:"total_used"`
+	MaxInUse      int    `json:"max-in-use" type:"counter" metric:"max_in_use"`
+	NumUserCached int    `json:"num-user-cached" type:"counter" metric:"num_user_cached"`
+}
+
 type Histogram struct {
 	Num1       int `json:"1,omitempty"`
 	Num2       int `json:"2,omitempty"`
@@ -203,11 +213,12 @@ type RaftInfo struct {
 }
 
 type CtlIfOut struct {
-	SysInfo         SystemInfo      `json:"system_info,omitempty"`
-	RaftRootEntry   []RaftInfo      `json:"raft_root_entry,omitempty"`
-	NISDInformation []NISDInfo      `json:"niorq_mgr_root_entry,omitempty"`
-	NISDRootEntry   []NISDRoot      `json:"nisd_root_entry,omitempty"`
-	NISDChunk       []NISDChunkInfo `json:"nisd_chunks,omitempty"`
+	SysInfo         SystemInfo       `json:"system_info,omitempty"`
+	RaftRootEntry   []RaftInfo       `json:"raft_root_entry,omitempty"`
+	NISDInformation []NISDInfo       `json:"niorq_mgr_root_entry,omitempty"`
+	NISDRootEntry   []NISDRoot       `json:"nisd_root_entry,omitempty"`
+	NISDChunk       []NISDChunkInfo  `json:"nisd_chunks,omitempty"`
+	BufSetNodes     []BufferSetNodes `json:"buffer_set_nodes,omitempty"`
 }
 
 type NcsiEP struct {
@@ -428,6 +439,7 @@ func (ep *NcsiEP) update(ctlData *CtlIfOut, op EPcmdType) {
 		ep.EPInfo.NISDRootEntry = ctlData.NISDRootEntry
 		ep.EPInfo.SysInfo = ctlData.SysInfo
 		ep.EPInfo.NISDChunk = ctlData.NISDChunk
+		ep.EPInfo.BufSetNodes = ctlData.BufSetNodes
 	default:
 		logrus.Debugf("invalid op=%d \n", op)
 	}

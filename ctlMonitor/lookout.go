@@ -445,6 +445,16 @@ func (epc *EPContainer) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 					// Parse each nisd chunk info
 					output += prometheus_handler.GenericPromDataParser(chunk, labelMap)
 				}
+				//remove "VDEV_UUID" and "CHUNK_NUM" from labelMap
+				delete(labelMap, "VDEV_UUID")
+				delete(labelMap, "CHUNK_NUM")
+				// iterate and parse each buffer set node
+				for _, buffer := range node.EPInfo.BufSetNodes {
+					// load labelMap with buffer set node data
+					labelMap["NAME"] = buffer.Name
+					// Parse each buffer set node info
+					output += prometheus_handler.GenericPromDataParser(buffer, labelMap)
+				}
 			}
 		}
 		fmt.Fprintf(w, "%s", output)
