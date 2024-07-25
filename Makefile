@@ -1,3 +1,5 @@
+TODO: fix this makefile
+
 DIR=/tmp
 
 install_all: compile nisdMonitor install
