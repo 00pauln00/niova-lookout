@@ -16,7 +16,8 @@ var RecvdPort int
 type handler struct {
 	udpPort      string
 	udpSocket    net.PacketConn
-	lookout      monitor.EPContainer
+	lookout      monitor.LookoutHandler
+	epc          monitor.EPContainer
 	endpointRoot *string
 	httpPort     int
 	ctlPath      *string
@@ -83,14 +84,11 @@ func main() {
 	//Get cmd line args
 	handler.parseCMDArgs()
 
-	logrus.Debug("coms: ", handler.coms)
-
 	//TODO: make optional based on gossip path empty or not
 	err := handler.coms.LoadConfigInfo()
 	if err != nil {
 		logrus.Fatal("Error while loading config info - ", err)
 	}
-	logrus.Debug("coms after loadConfigInfo: ", handler.coms)
 	//Start pmdb service client discovery api
 	if !handler.standalone {
 		handler.coms.StartClientAPI()
@@ -110,16 +108,15 @@ func main() {
 	portAddr = &RecvdPort
 	//Start lookout monitoring
 	logrus.Debug("Port Range: ", handler.coms.PortRange)
-	handler.lookout = monitor.EPContainer{
+	handler.epc = monitor.EPContainer{
 		MonitorUUID: "*",
 		AppType:     "NISD",
-		//HttpPort:    6666,
-		PortRange: handler.coms.PortRange,
-		CTLPath:   *handler.ctlPath,
-		PromPath:  handler.promPath,
-		//SerfMembershipCB: monitor.SerfMembership,
-		EnableHttp: true,
-		RetPort:    portAddr,
+	}
+	handler.lookout = monitor.LookoutHandler{
+		Epc:      &handler.epc,
+		PromPath: handler.promPath,
+		CTLPath:  *handler.ctlPath,
+		HttpPort: 6666,
 	}
 
 	errs := make(chan error, 1)
@@ -127,7 +124,7 @@ func main() {
 	//epc.httpQuery = make(map[string](chan []byte))
 
 	handler.coms.RetPort = portAddr
-	handler.coms.Epc = &handler.lookout
+	handler.coms.Epc = &handler.epc
 	handler.coms.HttpPort = 6666 //TODO: make this a flag
 
 	go func() {

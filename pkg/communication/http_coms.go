@@ -195,9 +195,7 @@ func (handler *ComHandler) getConfigData(config string) error {
 }
 
 func (handler *ComHandler) customQuery(node uuid.UUID, query string) []byte {
-	handler.Epc.Mutex.Lock()
-	ep := handler.Epc.EpMap[node]
-	handler.Epc.Mutex.Unlock()
+	ep := handler.Epc.Lookup(node)
 	//If not present
 	if ep == nil {
 		return []byte("Specified NISD is not present")
@@ -215,7 +213,6 @@ func (handler *ComHandler) customQuery(node uuid.UUID, query string) []byte {
 	return byteOP
 }
 
-// TODO: maybe put in the same file as the other http handlers
 func (handler *ComHandler) QueryHandle(w http.ResponseWriter, r *http.Request) {
 
 	//Decode the NISD request structure
@@ -244,12 +241,7 @@ func (handler *ComHandler) MetricsHandler(w http.ResponseWriter, r *http.Request
 	var output string
 
 	//Take snapshot of the EpMap
-	nodeMap := make(map[uuid.UUID]*monitor.NcsiEP)
-	handler.Epc.Mutex.Lock()
-	for k, v := range handler.Epc.EpMap {
-		nodeMap[k] = v
-	}
-	handler.Epc.Mutex.Unlock()
+	nodeMap := handler.Epc.TakeSnapshot()
 
 	labelMap := make(map[string]string)
 	for _, node := range nodeMap {

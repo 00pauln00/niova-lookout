@@ -1,5 +1,5 @@
 TAGS lookout.go~ niova-lookout
 
-nisdMonitor/nisdLookout
+cmd/lookout/targets.json
 
-nisdMonitor/targets.json
+cmd/lookout/lookout
