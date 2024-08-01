@@ -21,7 +21,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func (handler ComHandler) SerfMembership() map[string]bool {
+var SetTagsInterval int = 10
+
+func (handler *ComHandler) SerfMembership() map[string]bool {
 	membership := handler.StorageClient.GetMembership()
 	returnMap := make(map[string]bool)
 	for _, member := range membership {
@@ -32,7 +34,7 @@ func (handler ComHandler) SerfMembership() map[string]bool {
 	return returnMap
 }
 
-func (handler ComHandler) StartSerfAgent() error {
+func (handler *ComHandler) StartSerfAgent() error {
 	setLogOutput(handler.SerfLogger)
 	//agentPort := handler.agentPort
 	handler.SerfHandler = serfAgent.SerfAgentHandler{
@@ -181,6 +183,7 @@ func (handler *ComHandler) LoadConfigInfo() error {
 	logrus.Debug("IPAddrs:", IPAddrs)
 	handler.Addr = IPAddrs[0]
 
+	//TODO: fix this the ip addr contains ports and the ports are not being put into ServicePortRangeS and ServicePortRangeE
 	//Read Ports
 	scanner.Scan()
 	Ports := strings.Split(scanner.Text(), " ")

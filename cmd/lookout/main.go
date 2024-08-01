@@ -44,7 +44,7 @@ func (handler *handler) parseCMDArgs() {
 	flag.StringVar(&handler.PortRangeStr, "p", "", "Port range for the lookout to export data endpoints to, should be space seperated")
 	flag.StringVar(&handler.coms.AgentName, "n", uuid.New().String(), "Agent name")
 	flag.StringVar(&handler.coms.Addr, "a", "127.0.0.1", "Agent addr")
-	flag.StringVar(&handler.coms.GossipNodesPath, "c", "./gossipNodes", "PMDB server gossip info")
+	flag.StringVar(&handler.coms.GossipNodesPath, "c", "", "PMDB server gossip info")
 	flag.StringVar(&handler.promPath, "pr", "./targets.json", "Prometheus targets info")
 	flag.StringVar(&handler.coms.SerfLogger, "s", "serf.log", "Serf logs")
 	flag.StringVar(&handler.coms.RaftUUID, "r", "", "Raft UUID")
@@ -77,6 +77,7 @@ func usage(rc int) {
 func main() {
 	var handler handler
 	var portAddr *int
+	var err error
 
 	//Initialize communication handler
 	handler.coms = communication.ComHandler{}
@@ -84,10 +85,14 @@ func main() {
 	//Get cmd line args
 	handler.parseCMDArgs()
 
-	//TODO: make optional based on gossip path empty or not
-	err := handler.coms.LoadConfigInfo()
-	if err != nil {
-		logrus.Fatal("Error while loading config info - ", err)
+	//TODO: make this prettier than this and fix whole hardcoded http port thing. this is a part of that
+	if handler.coms.GossipNodesPath != "" {
+		err = handler.coms.LoadConfigInfo()
+		if err != nil {
+			logrus.Fatal("Error while loading config info - ", err)
+		}
+	} else {
+		handler.coms.PortRange = make([]uint16, 1)
 	}
 	//Start pmdb service client discovery api
 	if !handler.standalone {

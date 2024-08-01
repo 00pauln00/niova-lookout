@@ -154,7 +154,7 @@ func (handler *ComHandler) ServeHttp() error {
 	mux.HandleFunc("/v0/", handler.HttpHandle)
 	mux.HandleFunc("/metrics", handler.MetricsHandler)
 	for i := len(handler.PortRange) - 1; i >= 0; i-- {
-		handler.HttpPort = 6666 // int(epc.PortRange[i]) replace this
+		//handler.HttpPort = int(handler.PortRange[i]) //this is already given a value in main.go should it not be?
 		l, err := net.Listen("tcp", ":"+strconv.Itoa(handler.HttpPort))
 		if err != nil {
 			if strings.Contains(err.Error(), "bind") {
