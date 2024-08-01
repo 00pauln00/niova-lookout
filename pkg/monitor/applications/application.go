@@ -6,6 +6,8 @@ import (
 )
 
 type Application interface {
+	getDetectInfo() (string, EPcmdType)
+	UpdateCtlIfOut(*CtlIfOut) CtlIfOut
 }
 
 type Histogram struct {
@@ -36,13 +38,31 @@ type Time struct {
 	WrappedTime time.Time `json:"time"`
 }
 
+type EPcmdType uint32
+
+const (
+	RaftInfoOp   EPcmdType = 1
+	SystemInfoOp EPcmdType = 2
+	NISDInfoOp   EPcmdType = 3
+	Custom       EPcmdType = 4
+)
+
+type CtlIfOut struct { //crappy name
+	SysInfo         SystemInfo       `json:"system_info,omitempty"`
+	RaftRootEntry   []RaftInfo       `json:"raft_root_entry,omitempty"`
+	NISDInformation []NISDInfo       `json:"niorq_mgr_root_entry,omitempty"`
+	NISDRootEntry   []NISDRoot       `json:"nisd_root_entry,omitempty"`
+	NISDChunk       []NISDChunkInfo  `json:"nisd_chunks,omitempty"`
+	BufSetNodes     []BufferSetNodes `json:"buffer_set_nodes,omitempty"`
+}
+
 // custom UnmarshalJSON method used for handling various timestamp formats.
 func (t *Time) UnmarshalJSON(data []byte) error {
 	var err error
 
 	data = chompQuotes(data)
 
-	if err = json.Unmarshal(data, t.WrappedTime); err == nil {
+	if err = json.Unmarshal(data, &t.WrappedTime); err == nil {
 		return nil
 	}
 	const layout = "Mon Jan 02 15:04:05 MST 2006"
@@ -66,4 +86,50 @@ func chompQuotes(data []byte) []byte {
 	}
 
 	return []byte(s)
+}
+
+func Detect(appType string, b bool) (string, EPcmdType) {
+	var app Application
+	switch appType {
+	case "PMDB":
+		if b {
+			app = Pmdb{}
+		} else {
+			app = Syst{}
+
+		}
+	case "NISD":
+		app = Nisd{}
+	default:
+		app = nil
+	}
+	return app.getDetectInfo()
+}
+
+func CreateAppByType(appType string, epInfo CtlIfOut) Application {
+	var app Application
+	switch appType {
+	case "PMDB":
+		app = Pmdb{EPInfo: epInfo}
+	case "NISD":
+		app = Nisd{EPInfo: epInfo}
+	default:
+		app = nil
+	}
+	return app
+}
+
+func CreateAppByOp(cio CtlIfOut, op EPcmdType) Application {
+	var app Application
+	switch op {
+	case RaftInfoOp:
+		app = Pmdb{EPInfo: cio, Op: op}
+	case SystemInfoOp:
+		app = Syst{EPInfo: cio, Op: op}
+	case NISDInfoOp:
+		app = Nisd{EPInfo: cio, Op: op}
+	default:
+		app = nil
+	}
+	return app
 }

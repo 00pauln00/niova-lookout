@@ -4,12 +4,20 @@ import (
 	"bytes"
 	"common/serviceDiscovery"
 	"encoding/gob"
+	"fmt"
 
+	"github.com/00pauln00/niova-lookout/pkg/prometheusHandler"
 	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
+	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 )
 
-type PmdbHandler struct {
-	//StorageClient   serviceDiscovery.ServiceDiscoveryHandler
+type Pmdb struct {
+	AppType       string
+	Cmd           string
+	Op            EPcmdType
+	EPInfo        CtlIfOut
+	RaftRootEntry []RaftInfo
 }
 
 type RaftInfo struct {
@@ -65,4 +73,24 @@ func LoadPMDBLabelMap(labelMap map[string]string, raftEntry RaftInfo) map[string
 	labelMap["CLIENT_REQS"] = raftEntry.ClientRequests
 
 	return labelMap
+}
+
+func (p Pmdb) getDetectInfo() (string, EPcmdType) {
+	p.GetCmdStr()
+	p.GetOp()
+	return p.Cmd, p.Op
+}
+
+func (p Pmdb) GetCmdStr() {
+	p.Cmd = "GET /raft_root_entry/.*/.*"
+}
+
+func (p Pmdb) GetOp() {
+	p.Op = RaftInfoOp
+}
+
+func (p Pmdb) UpdateCtlIfOut(c *CtlIfOut) CtlIfOut {
+	p.EPInfo.RaftRootEntry = c.RaftRootEntry
+	logrus.Debugf("update-raft %+v \n", c.RaftRootEntry)
+	return p.EPInfo
 }

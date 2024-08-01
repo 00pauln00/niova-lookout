@@ -1,8 +1,12 @@
 package applications
 
 import (
-	"net"
+	"strconv"
 	"unsafe"
+
+	"github.com/00pauln00/niova-lookout/pkg/prometheusHandler"
+	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 )
 
 // #include <unistd.h>
@@ -22,15 +26,12 @@ struct nisd_config
 */
 import "C"
 
-type NisdMonitor struct {
-	//storageClient serviceDiscovery.ServiceDiscoveryHandler
-	udpSocket net.PacketConn
-	//lookout      monitor.EPContainer
-	endpointRoot *string
-	ctlPath      *string
-	promPath     string
-	standalone   bool
-	PortRangeStr string
+type Nisd struct {
+	AppType string
+	Cmd     string
+	Op      EPcmdType
+	EPInfo  CtlIfOut
+	uuid    uuid.UUID
 }
 
 type NISDInfo struct {
@@ -154,4 +155,27 @@ func LoadNISDLabelMap(labelMap map[string]string, nisdRootEntry NISDRoot) map[st
 	labelMap["ALT_NAME"] = nisdRootEntry.AltName
 
 	return labelMap
+}
+
+func (n Nisd) getDetectInfo() (string, EPcmdType) {
+	n.GetCmdStr()
+	n.GetOp()
+	return n.Cmd, n.Op
+}
+
+func (n *Nisd) GetCmdStr() {
+	n.Cmd = "GET /.*/.*/.*"
+}
+
+func (n *Nisd) GetOp() {
+	n.Op = NISDInfoOp
+}
+
+func (n Nisd) UpdateCtlIfOut(c *CtlIfOut) CtlIfOut {
+	n.EPInfo.NISDInformation = c.NISDInformation
+	n.EPInfo.NISDRootEntry = c.NISDRootEntry
+	n.EPInfo.SysInfo = c.SysInfo
+	n.EPInfo.NISDChunk = c.NISDChunk
+	n.EPInfo.BufSetNodes = c.BufSetNodes
+	return n.EPInfo
 }

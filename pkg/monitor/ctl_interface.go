@@ -29,15 +29,6 @@ const (
 	EPtimeoutSec      = 60.0
 )
 
-type CtlIfOut struct { //this is dumb name. can this be
-	SysInfo         applications.SystemInfo       `json:"system_info,omitempty"`
-	RaftRootEntry   []applications.RaftInfo       `json:"raft_root_entry,omitempty"`
-	NISDInformation []applications.NISDInfo       `json:"niorq_mgr_root_entry,omitempty"`
-	NISDRootEntry   []applications.NISDRoot       `json:"nisd_root_entry,omitempty"`
-	NISDChunk       []applications.NISDChunkInfo  `json:"nisd_chunks,omitempty"`
-	BufSetNodes     []applications.BufferSetNodes `json:"buffer_set_nodes,omitempty"`
-}
-
 type NcsiEP struct {
 	Uuid         uuid.UUID             `json:"-"`
 	Path         string                `json:"-"`
@@ -47,19 +38,10 @@ type NcsiEP struct {
 	LastReport   time.Time             `json:"-"`
 	LastClear    time.Time             `json:"-"`
 	Alive        bool                  `json:"responsive"`
-	EPInfo       CtlIfOut              `json:"ep_info"`
+	EPInfo       applications.CtlIfOut `json:"ep_info"`
 	pendingCmds  map[string]*epCommand `json:"-"`
 	Mutex        sync.Mutex            `json:"-"`
 }
-
-type EPcmdType uint32
-
-const (
-	RaftInfoOp   EPcmdType = 1
-	SystemInfoOp EPcmdType = 2
-	NISDInfoOp   EPcmdType = 3
-	Custom       EPcmdType = 4
-)
 
 type epCommand struct {
 	ep      *NcsiEP
@@ -67,7 +49,7 @@ type epCommand struct {
 	fn      string
 	outJSON []byte
 	err     error
-	op      EPcmdType
+	op      applications.EPcmdType
 }
 
 func (cmd *epCommand) getOutFnam() string {
@@ -182,51 +164,14 @@ func (ep *NcsiEP) epRoot() string {
 	return ep.Path
 }
 
-func (ep *NcsiEP) getRaftinfo() error {
-	cmd := epCommand{ep: ep, cmd: "GET /raft_root_entry/.*/.*",
-		op: RaftInfoOp}
-	cmd.submit()
-
-	return cmd.err
-}
-
-func (ep *NcsiEP) getSysinfo() error {
-	cmd := epCommand{ep: ep, cmd: "GET /system_info/.*", op: SystemInfoOp}
-	cmd.submit()
-	return cmd.err
-}
-
-func (ep *NcsiEP) getNISDinfo() error {
-	cmd := epCommand{ep: ep, cmd: "GET /.*/.*/.*", op: NISDInfoOp}
-	cmd.submit()
-	return cmd.err
-}
-
 func (ep *NcsiEP) CtlCustomQuery(customCMD string, ID string) error {
-	cmd := epCommand{ep: ep, cmd: customCMD, op: Custom, fn: ID}
+	cmd := epCommand{ep: ep, cmd: customCMD, op: applications.Custom, fn: ID}
 	cmd.submit()
 	return cmd.err
 }
 
-func (ep *NcsiEP) update(ctlData *CtlIfOut, op EPcmdType) {
-	switch op {
-	case RaftInfoOp:
-		ep.EPInfo.RaftRootEntry = ctlData.RaftRootEntry
-		logrus.Debugf("update-raft %+v \n", ctlData.RaftRootEntry)
-	case SystemInfoOp:
-		ep.EPInfo.SysInfo = ctlData.SysInfo
-		//ep.LastReport = ep.EPInfo.SysInfo.CurrentTime.WrappedTime
-		logrus.Debugf("update-sys %+v \n", ctlData.SysInfo)
-	case NISDInfoOp:
-		//update
-		ep.EPInfo.NISDInformation = ctlData.NISDInformation
-		ep.EPInfo.NISDRootEntry = ctlData.NISDRootEntry
-		ep.EPInfo.SysInfo = ctlData.SysInfo
-		ep.EPInfo.NISDChunk = ctlData.NISDChunk
-		ep.EPInfo.BufSetNodes = ctlData.BufSetNodes
-	default:
-		logrus.Debugf("invalid op=%d \n", op)
-	}
+func (ep *NcsiEP) update(ctlData *applications.CtlIfOut, app applications.Application) {
+	ep.EPInfo = app.UpdateCtlIfOut(ctlData)
 	ep.LastReport = time.Now()
 }
 
@@ -242,13 +187,13 @@ func (ep *NcsiEP) Complete(cmdName string, output *[]byte) error {
 	}
 
 	//Add here to break for custom command
-	if cmd.op == Custom {
+	if cmd.op == applications.Custom {
 		*output = cmd.getOutJSON()
 		return nil
 	}
 
 	var err error
-	var ctlifout CtlIfOut
+	var ctlifout applications.CtlIfOut
 	if err = json.Unmarshal(cmd.getOutJSON(), &ctlifout); err != nil {
 		if ute, ok := err.(*json.UnmarshalTypeError); ok {
 			logrus.Errorf("UnmarshalTypeError %v - %v - %v\n",
@@ -259,7 +204,8 @@ func (ep *NcsiEP) Complete(cmdName string, output *[]byte) error {
 		}
 		return err
 	}
-	ep.update(&ctlifout, cmd.op)
+	app := applications.CreateAppByOp(ctlifout, cmd.op)
+	ep.update(&ctlifout, app)
 
 	return nil
 }
@@ -289,19 +235,18 @@ func (ep *NcsiEP) Remove() {
 	ep.removeFiles(output_path)
 }
 
-// TODO: use an interface for the Detect function
 func (ep *NcsiEP) Detect(appType string) error {
 	if ep.Alive {
 		var err error
-		switch appType {
-		case "NISD":
-			ep.getNISDinfo()
-		case "PMDB":
-			err = ep.getSysinfo()
-			if err == nil {
-				err = ep.getRaftinfo()
-			}
-
+		//test
+		cmdStr, op := applications.Detect(appType, false)
+		cmd := epCommand{ep: ep, cmd: cmdStr, op: op}
+		cmd.submit()
+		if cmd.err != nil && cmd.op == applications.SystemInfoOp {
+			cmdStr, op = applications.Detect(appType, true)
+			cmd = epCommand{ep: ep, cmd: cmdStr, op: op}
+			cmd.submit()
+			return cmd.err
 		}
 
 		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
