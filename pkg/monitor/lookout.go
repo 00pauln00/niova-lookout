@@ -28,6 +28,7 @@ type LookoutHandler struct {
 func (h *LookoutHandler) monitor() error {
 	var err error = nil
 
+	//Question: when would run become false? as is we never set it to false
 	for h.run == true {
 		var tmp_stb syscall.Stat_t
 		var sleepTime time.Duration
@@ -94,12 +95,15 @@ func (h *LookoutHandler) processInotifyEvent(event *fsnotify.Event) {
 	splitPath := strings.Split(event.Name, "/")
 	cmpstr := splitPath[len(splitPath)-1]
 	uuid, err := uuid.Parse(splitPath[len(splitPath)-3])
+	logrus.Tracef("cmpstr: %s, uuid: %s\n", cmpstr, uuid.String())
 	if err != nil {
+		logrus.Error("uuid.Parse(): ", err)
 		return
 	}
 
 	//temp file exclusion
 	if strings.Contains(cmpstr, ".") {
+		logrus.Trace("Skipping temp file")
 		return
 	}
 
@@ -187,6 +191,7 @@ func (h *LookoutHandler) Start() error {
 		return err
 	}
 	//Setup lookout
+	logrus.Info("Initializing Lookout")
 	err = h.init()
 	if err != nil {
 		logrus.Debug("Lookout Init - ", err)
@@ -194,6 +199,7 @@ func (h *LookoutHandler) Start() error {
 	}
 
 	//Start monitoring
+	logrus.Info("Starting Monitor")
 	err = h.monitor()
 	if err != nil {
 		logrus.Debug("Lookout Monitor - ", err)

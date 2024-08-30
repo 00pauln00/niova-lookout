@@ -111,6 +111,7 @@ func (handler *ComHandler) getConfigNSend(udpInfo UdpMessage) {
 	handler.Epc.MarkAlive(uuidString)
 
 	//Send config read request to PMDB server
+	//TODO: make this call a funtion Request which is application specific through the interface
 	responseByte, _ := applications.RequestPMDB(uuidString) //handler.RequestPMDB(uuidString)
 
 	//Decode response to IPAddr and Port
@@ -123,15 +124,17 @@ func (handler *ComHandler) getConfigNSend(udpInfo UdpMessage) {
 	port, _ := strconv.Atoi(value["Port"])
 
 	//Fill C structure
+	//TODO: make this call a funtion FillCStruct which is application specific through the interface
 	structByteArray := applications.FillNisdCStruct(uuidString, ipaddr, port)
 
 	//Send the data to the node
 	handler.UdpSocket.WriteTo(structByteArray, udpInfo.addr)
 }
 
-// NISD- should this be in the nisd file? should it pertain to any of the other files? gossip can give info on other services
+// NISD
 func (handler *ComHandler) SetTags() {
 	for {
+		//TODO: make this a function that is application specific through the interface
 		tagData := handler.GetCompressedGossipDataNISD()
 		err := handler.SerfHandler.SetNodeTags(tagData)
 		if err != nil {
@@ -143,11 +146,11 @@ func (handler *ComHandler) SetTags() {
 
 func (handler *ComHandler) GetCompressedGossipDataNISD() map[string]string {
 	returnMap := make(map[string]string)
-	nisdMap := handler.Epc.GetList() //may not be looking at the right place
-	for _, nisd := range nisdMap {
+	epMap := handler.Epc.GetList()
+	for _, ep := range epMap {
 		//Get data from map
-		uuid := nisd.Uuid.String()
-		status := nisd.Alive
+		uuid := ep.Uuid.String()
+		status := ep.Alive
 		//Compact the data
 		cuuid, _ := compressionLib.CompressUUID(uuid)
 		cstatus := "0"
@@ -167,12 +170,12 @@ func (handler *ComHandler) GetCompressedGossipDataNISD() map[string]string {
 func (handler *ComHandler) LoadConfigInfo() error {
 	//Get addrs and Rports and store it in handler
 	if _, err := os.Stat(handler.GossipNodesPath); os.IsNotExist(err) {
-		logrus.Trace("GossipNodesPath does not exist:", handler.GossipNodesPath)
+		logrus.Error("GossipNodesPath does not exist:", handler.GossipNodesPath)
 		return err
 	}
 	reader, err := os.OpenFile(handler.GossipNodesPath, os.O_RDONLY, 0444)
 	if err != nil {
-		logrus.Trace("Error while opening GossipNodesPath file")
+		logrus.Error("Error while opening GossipNodesPath file")
 		return err
 	}
 
