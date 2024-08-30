@@ -41,6 +41,7 @@ func (handler *handler) parseCMDArgs() {
 
 	flag.BoolVar(&handler.standalone, "std", true, "Set flag to true to run lookout standalone for NISD") // set to gossip and false default
 	flag.StringVar(&handler.udpPort, "u", "1054", "UDP port for NISD communication")
+	flag.IntVar(&handler.httpPort, "hp", 6666, "HTTP port for communication")
 	flag.StringVar(&handler.PortRangeStr, "p", "", "Port range for the lookout to export data endpoints to, should be space seperated")
 	flag.StringVar(&handler.coms.AgentName, "n", uuid.New().String(), "Agent name")
 	flag.StringVar(&handler.coms.Addr, "a", "127.0.0.1", "Agent addr")
@@ -85,7 +86,6 @@ func main() {
 	//Get cmd line args
 	handler.parseCMDArgs()
 
-	//TODO: make this prettier than this and fix whole hardcoded http port thing. this is a part of that
 	if handler.coms.GossipNodesPath != "" {
 		err = handler.coms.LoadConfigInfo()
 		if err != nil {
@@ -115,22 +115,21 @@ func main() {
 	logrus.Debug("Port Range: ", handler.coms.PortRange)
 	handler.epc = monitor.EPContainer{
 		MonitorUUID: "*",
-		AppType:     "NISD",
 	}
+
 	handler.lookout = monitor.LookoutHandler{
 		Epc:      &handler.epc,
 		PromPath: handler.promPath,
 		CTLPath:  *handler.ctlPath,
-		HttpPort: 6666,
+		HttpPort: handler.httpPort,
 	}
 
 	errs := make(chan error, 1)
 	//Start http service
-	//epc.httpQuery = make(map[string](chan []byte))
 
 	handler.coms.RetPort = portAddr
 	handler.coms.Epc = &handler.epc
-	handler.coms.HttpPort = 6666 //TODO: make this a flag
+	handler.coms.HttpPort = handler.httpPort
 
 	go func() {
 		err_r := handler.coms.ServeHttp()
@@ -148,9 +147,9 @@ func main() {
 	if er != nil {
 		logrus.Fatal("Error while starting Lookout : ", er)
 	}
-	logrus.Info("Lookout started successfully")
-
+	//Question: We never get here because this is set to happen after run has been set to false. is this correct?
 	if !handler.standalone {
+		//QUESTION: these are both infinite loops. should htey be ran as go functions?
 		//Wait till http lookout http is up and running
 		handler.coms.CheckHTTPLiveness()
 		//Set serf tags
