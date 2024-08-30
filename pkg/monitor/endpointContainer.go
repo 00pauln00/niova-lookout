@@ -14,21 +14,18 @@ import (
 
 type EPContainer struct {
 	MonitorUUID      string
-	AppType          string
 	SerfMembershipCB func() map[string]bool
 	epMap            map[uuid.UUID]*NcsiEP
 	mutex            sync.Mutex
 	HttpQuery        map[string](chan []byte)
 }
 
-// move to endpoint.go
 func (epc *EPContainer) GetList() map[uuid.UUID]*NcsiEP {
 	epc.mutex.Lock()
 	defer epc.mutex.Unlock()
 	return epc.epMap
 }
 
-// move to endpoint.go
 func (epc *EPContainer) MarkAlive(serviceUUID string) error {
 	serviceID, err := uuid.Parse(serviceUUID)
 	if err != nil {
@@ -46,8 +43,10 @@ func (epc *EPContainer) MarkAlive(serviceUUID string) error {
 func (epc *EPContainer) LivenessCheck() {
 	for _, ep := range epc.epMap {
 		ep.Remove()
-		// what about the error that is returned?
-		ep.Detect(epc.AppType)
+		err := ep.Detect()
+		if err != nil {
+			logrus.Error(err)
+		}
 	}
 }
 
@@ -101,11 +100,8 @@ func (epc *EPContainer) UpdateEpMap(uuid uuid.UUID, newlns *NcsiEP) {
 	epc.epMap[uuid] = newlns
 }
 
-// mechanic
 func (epc *EPContainer) JsonMarshal() []byte {
 	var jsonData []byte
-
-	//make this a function
 	epc.mutex.Lock()
 	jsonData, err := json.MarshalIndent(epc.epMap, "", "\t")
 	epc.mutex.Unlock()
@@ -117,7 +113,6 @@ func (epc *EPContainer) JsonMarshal() []byte {
 	return jsonData
 }
 
-// mechanic
 func (epc *EPContainer) JsonMarshalUUID(uuid uuid.UUID) []byte {
 	var jsonData []byte
 	var err error
