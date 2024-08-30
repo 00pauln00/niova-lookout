@@ -124,8 +124,9 @@ func (h *LookoutHandler) scan() {
 }
 
 func (h *LookoutHandler) tryAdd(uuid uuid.UUID) {
-	lns := h.Epc.Lookup(uuid) //lns := epc.EpMap[uuid]
+	lns := h.Epc.Lookup(uuid)
 	if lns == nil {
+		logrus.Trace("Adding new endpoint, UUID: ", uuid)
 		newlns := NcsiEP{
 			Uuid:         uuid,
 			Path:         h.CTLPath + "/" + uuid.String(),
@@ -136,6 +137,9 @@ func (h *LookoutHandler) tryAdd(uuid uuid.UUID) {
 			Alive:        true,
 			pendingCmds:  make(map[string]*epCommand),
 		}
+		newlns.GetAppType()
+		//TODO: populate the app type, determine what needs put in App and what needs put in NcsiEP
+		newlns.App.SetUUID(uuid)
 
 		if err := h.EpWatcher.Add(newlns.Path + "/output"); err != nil {
 			logrus.Fatal("Watcher.Add() failed:", err)

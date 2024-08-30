@@ -5,6 +5,7 @@ import (
 	"common/serviceDiscovery"
 	"encoding/gob"
 	"fmt"
+	"net/http"
 
 	"github.com/00pauln00/niova-lookout/pkg/prometheusHandler"
 	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
@@ -13,11 +14,10 @@ import (
 )
 
 type Pmdb struct {
-	AppType       string
-	Cmd           string
-	Op            EPcmdType
+	uuid          uuid.UUID
 	EPInfo        CtlIfOut
 	RaftRootEntry []RaftInfo
+	membership    map[string]bool
 }
 
 type RaftInfo struct {
@@ -65,32 +65,101 @@ func RequestPMDB(key string) ([]byte, error) {
 }
 
 // loadPMDBLabelMap updates the provided labelMap with information from a RaftInfo struct.
-func LoadPMDBLabelMap(labelMap map[string]string, raftEntry RaftInfo) map[string]string {
-	labelMap["STATE"] = raftEntry.State
-	labelMap["RAFT_UUID"] = raftEntry.RaftUUID
-	labelMap["VOTED_FOR"] = raftEntry.VotedForUUID
-	labelMap["FOLLOWER_REASON"] = raftEntry.FollowerReason
-	labelMap["CLIENT_REQS"] = raftEntry.ClientRequests
+func (p *Pmdb) LoadPMDBLabelMap(labelMap map[string]string) map[string]string {
+	labelMap["STATE"] = p.RaftRootEntry[0].State
+	labelMap["RAFT_UUID"] = p.RaftRootEntry[0].RaftUUID
+	labelMap["VOTED_FOR"] = p.RaftRootEntry[0].VotedForUUID
+	labelMap["FOLLOWER_REASON"] = p.RaftRootEntry[0].FollowerReason
+	labelMap["CLIENT_REQS"] = p.RaftRootEntry[0].ClientRequests
 
 	return labelMap
 }
 
-func (p Pmdb) getDetectInfo() (string, EPcmdType) {
-	p.GetCmdStr()
-	p.GetOp()
-	return p.Cmd, p.Op
+func (p *Pmdb) SetMembership(membership map[string]bool) {
+	p.membership = membership
 }
 
-func (p Pmdb) GetCmdStr() {
-	p.Cmd = "GET /raft_root_entry/.*/.*"
+func (p *Pmdb) GetMembership() map[string]bool {
+	return p.membership
 }
 
-func (p Pmdb) GetOp() {
-	p.Op = RaftInfoOp
+func (p *Pmdb) GetAppDetectInfo(b bool) (string, EPcmdType) {
+	if b {
+		return "GET /raft_root_entry/.*/.*", RaftInfoOp
+	} else {
+		syst := &Syst{}
+		return syst.GetAppDetectInfo(b)
+	}
 }
 
-func (p Pmdb) UpdateCtlIfOut(c *CtlIfOut) CtlIfOut {
+func (p *Pmdb) GetAppType() string {
+	return "PMDB"
+}
+
+func (p *Pmdb) SetCtlIfOut(c CtlIfOut) {
 	p.EPInfo.RaftRootEntry = c.RaftRootEntry
 	logrus.Debugf("update-raft %+v \n", c.RaftRootEntry)
+}
+
+func (p *Pmdb) GetCtlIfOut() CtlIfOut {
 	return p.EPInfo
+}
+
+func (p *Pmdb) SetUUID(uuid uuid.UUID) {
+	p.uuid = uuid
+}
+
+func (p *Pmdb) GetUUID() uuid.UUID {
+	return p.uuid
+}
+
+func (p *Pmdb) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.Request) {
+	var output string
+	labelMap["PMDB_UUID"] = p.GetUUID().String()
+	labelMap["TYPE"] = p.GetAppType()
+	// Loading labelMap with PMDB data
+	labelMap = p.LoadPMDBLabelMap(labelMap)
+	// Parsing exported data
+	output += prometheusHandler.GenericPromDataParser(p.RaftRootEntry[0], labelMap)
+	// Parsing membership data
+	output += p.parseMembershipPrometheus()
+	// Parsing follower data
+	output += p.getFollowerStats()
+	// Parsing system info
+	output += prometheusHandler.GenericPromDataParser(p.EPInfo.SysInfo, labelMap)
+	fmt.Fprintf(w, "%s", output)
+}
+
+func (p *Pmdb) getFollowerStats() string {
+	var output string
+	for indx := range p.RaftRootEntry[0].FollowerStats {
+		UUID := p.RaftRootEntry[0].FollowerStats[indx].PeerUUID
+		NextIdx := p.RaftRootEntry[0].FollowerStats[indx].NextIdx
+		PrevIdxTerm := p.RaftRootEntry[0].FollowerStats[indx].PrevIdxTerm
+		LastAckMs := p.RaftRootEntry[0].FollowerStats[indx].LastAckMs
+		output += "\n" + fmt.Sprintf(`follower_stats{uuid="%s"next_idx="%d"prev_idx_term="%d"}%d`, UUID, NextIdx, PrevIdxTerm, LastAckMs)
+	}
+	return output
+}
+
+func (p *Pmdb) parseMembershipPrometheus() string {
+	var output string
+	for name, isAlive := range p.membership {
+		var adder, status string
+		if isAlive {
+			adder = "1"
+			status = "online"
+		} else {
+			adder = "0"
+			status = "offline"
+		}
+		if p.GetUUID().String() == name {
+			output += "\n" + fmt.Sprintf(`node_status{uuid="%s"state="%s"status="%s"raftUUID="%s"} %s`, name, p.RaftRootEntry[0].State, status, p.RaftRootEntry[0].RaftUUID, adder)
+		} else {
+			// since we do not know the state of other nodes
+			output += "\n" + fmt.Sprintf(`node_status{uuid="%s"status="%s"raftUUID="%s"} %s`, name, status, p.RaftRootEntry[0].RaftUUID, adder)
+		}
+
+	}
+	return output
 }

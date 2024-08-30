@@ -2,12 +2,26 @@ package applications
 
 import (
 	"encoding/json"
+	"errors"
+	"net/http"
 	"time"
+
+	"github.com/google/uuid"
 )
 
-type Application interface {
-	getDetectInfo() (string, EPcmdType)
-	UpdateCtlIfOut(*CtlIfOut) CtlIfOut
+type AppI interface {
+	GetAppDetectInfo(bool) (string, EPcmdType)
+	GetAppType() string
+	//get the data from ctl-interface into local go struct (unmarshal)
+	SetCtlIfOut(CtlIfOut)
+	GetCtlIfOut() CtlIfOut
+	SetUUID(uuid.UUID)
+	GetUUID() uuid.UUID
+	SetMembership(map[string]bool)
+	GetMembership() map[string]bool
+	Parse(map[string]string, http.ResponseWriter, *http.Request)
+	//obtain gossip data from app  (can return null for app types which do not use gossip) //structByteArray := applications.FillNisdCStruct(uuidString, ipaddr, port)
+	//obtain metrics data from app
 }
 
 type Histogram struct {
@@ -41,10 +55,11 @@ type Time struct {
 type EPcmdType uint32
 
 const (
+	IdentifyOp   EPcmdType = 0
 	RaftInfoOp   EPcmdType = 1
 	SystemInfoOp EPcmdType = 2
 	NISDInfoOp   EPcmdType = 3
-	Custom       EPcmdType = 4
+	CustomOp     EPcmdType = 4
 )
 
 type CtlIfOut struct { //crappy name
@@ -88,48 +103,19 @@ func chompQuotes(data []byte) []byte {
 	return []byte(s)
 }
 
-func Detect(appType string, b bool) (string, EPcmdType) {
-	var app Application
-	switch appType {
-	case "PMDB":
-		if b {
-			app = Pmdb{}
-		} else {
-			app = Syst{}
-
-		}
-	case "NISD":
-		app = Nisd{}
-	default:
-		app = nil
+func DetermineApp(jsonData []byte) (AppI, error) {
+	var data map[string]interface{}
+	if err := json.Unmarshal(jsonData, &data); err != nil {
+		return &Unrecognized{}, err
 	}
-	return app.getDetectInfo()
-}
 
-func CreateAppByType(appType string, epInfo CtlIfOut) Application {
-	var app Application
-	switch appType {
-	case "PMDB":
-		app = Pmdb{EPInfo: epInfo}
-	case "NISD":
-		app = Nisd{EPInfo: epInfo}
-	default:
-		app = nil
+	if _, ok := data["raft_root_entry"]; ok { //There may be a better option than this within the JSON data
+		return &Pmdb{}, nil
+	} else if _, ok := data["nisd_root_entry"]; ok {
+		return &Nisd{}, nil
+	} else if _, ok := data["niova_client"]; ok { //TODO: this needs to be updated to the correct key
+		return &NiovaClient{}, nil
 	}
-	return app
-}
 
-func CreateAppByOp(cio CtlIfOut, op EPcmdType) Application {
-	var app Application
-	switch op {
-	case RaftInfoOp:
-		app = Pmdb{EPInfo: cio, Op: op}
-	case SystemInfoOp:
-		app = Syst{EPInfo: cio, Op: op}
-	case NISDInfoOp:
-		app = Nisd{EPInfo: cio, Op: op}
-	default:
-		app = nil
-	}
-	return app
+	return &Unrecognized{}, errors.New("Unrecognized application")
 }

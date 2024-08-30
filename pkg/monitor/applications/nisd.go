@@ -1,6 +1,8 @@
 package applications
 
 import (
+	"fmt"
+	"net/http"
 	"strconv"
 	"unsafe"
 
@@ -27,11 +29,9 @@ struct nisd_config
 import "C"
 
 type Nisd struct {
-	AppType string
-	Cmd     string
-	Op      EPcmdType
-	EPInfo  CtlIfOut
-	uuid    uuid.UUID
+	uuid       uuid.UUID
+	EPInfo     CtlIfOut
+	membership map[string]bool
 }
 
 type NISDInfo struct {
@@ -138,7 +138,6 @@ type BufferSetNodes struct {
 	NumUserCached int    `json:"num-user-cached" type:"counter" metric:"buf_set_node_num_user_cached"`
 }
 
-// TODO: is this actually for the nisd or just poor naming?
 func FillNisdCStruct(UUID string, ipaddr string, port int) []byte {
 	//FIXME: free the memory
 	nisd_peer_config := C.struct_nisd_config{}
@@ -150,32 +149,84 @@ func FillNisdCStruct(UUID string, ipaddr string, port int) []byte {
 	return returnData
 }
 
-func LoadNISDLabelMap(labelMap map[string]string, nisdRootEntry NISDRoot) map[string]string {
+func (n *Nisd) LoadNISDLabelMap(labelMap map[string]string) map[string]string {
 	//labelMap["STATUS"] = nisdRootEntry.Status
-	labelMap["ALT_NAME"] = nisdRootEntry.AltName
+	labelMap["ALT_NAME"] = n.EPInfo.NISDRootEntry[0].AltName
 
 	return labelMap
 }
 
-func (n Nisd) getDetectInfo() (string, EPcmdType) {
-	n.GetCmdStr()
-	n.GetOp()
-	return n.Cmd, n.Op
+func (n *Nisd) SetMembership(membership map[string]bool) {
+	n.membership = membership
 }
 
-func (n *Nisd) GetCmdStr() {
-	n.Cmd = "GET /.*/.*/.*"
+func (n *Nisd) GetMembership() map[string]bool {
+	return n.membership
 }
 
-func (n *Nisd) GetOp() {
-	n.Op = NISDInfoOp
+func (n *Nisd) GetAppType() string {
+	return "NISD"
 }
 
-func (n Nisd) UpdateCtlIfOut(c *CtlIfOut) CtlIfOut {
+// TODO: Make a more refined version of this function
+func (n *Nisd) GetAppDetectInfo(b bool) (string, EPcmdType) {
+	return "GET /.*/.*/.*", NISDInfoOp
+}
+
+func (n *Nisd) SetCtlIfOut(c CtlIfOut) {
 	n.EPInfo.NISDInformation = c.NISDInformation
 	n.EPInfo.NISDRootEntry = c.NISDRootEntry
 	n.EPInfo.SysInfo = c.SysInfo
 	n.EPInfo.NISDChunk = c.NISDChunk
 	n.EPInfo.BufSetNodes = c.BufSetNodes
+}
+
+func (n *Nisd) GetCtlIfOut() CtlIfOut {
 	return n.EPInfo
+}
+
+func (n *Nisd) SetUUID(uuid uuid.UUID) {
+	n.uuid = uuid
+}
+
+func (n *Nisd) GetUUID() uuid.UUID {
+	return n.uuid
+}
+
+func (n *Nisd) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.Request) {
+	var output string
+	labelMap["NISD_UUID"] = n.GetUUID().String()
+	labelMap["TYPE"] = n.GetAppType()
+	// print out node info for debugging
+	logrus.Debug("NISD UUID: ", n.GetUUID())
+	logrus.Debug("NISD Info: ", n.EPInfo)
+	// Load labelMap with NISD data if present
+	if condition := len(n.EPInfo.NISDRootEntry) == 0; !condition {
+		labelMap = n.LoadNISDLabelMap(labelMap)
+		// Parse NISDInfo
+		output += prometheusHandler.GenericPromDataParser(n.EPInfo.NISDInformation[0], labelMap)
+		// Parse NISDRootEntry
+		output += prometheusHandler.GenericPromDataParser(n.EPInfo.NISDRootEntry[0], labelMap)
+		// Parse nisd system info
+		output += prometheusHandler.GenericPromDataParser(n.EPInfo.SysInfo, labelMap)
+		// Iterate and parse each NISDChunk if populated
+		for _, chunk := range n.EPInfo.NISDChunk {
+			// load labelMap with NISD chunk data
+			labelMap["VDEV_UUID"] = chunk.VdevUUID
+			labelMap["CHUNK_NUM"] = strconv.Itoa(chunk.Number)
+			// Parse each nisd chunk info
+			output += prometheusHandler.GenericPromDataParser(chunk, labelMap)
+		}
+		//remove "VDEV_UUID" and "CHUNK_NUM" from labelMap
+		delete(labelMap, "VDEV_UUID")
+		delete(labelMap, "CHUNK_NUM")
+		// iterate and parse each buffer set node
+		for _, buffer := range n.EPInfo.BufSetNodes {
+			// load labelMap with buffer set node data
+			labelMap["NAME"] = buffer.Name
+			// Parse each buffer set node info
+			output += prometheusHandler.GenericPromDataParser(buffer, labelMap)
+		}
+	}
+	fmt.Fprintf(w, "%s", output)
 }

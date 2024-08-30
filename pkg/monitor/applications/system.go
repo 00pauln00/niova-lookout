@@ -1,7 +1,10 @@
 package applications
 
 import (
+	"net/http"
+
 	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 )
 
 type SystemInfo struct {
@@ -30,4 +33,45 @@ type SystemInfo struct {
 func LoadSystemInfo(labelMap map[string]string, sysInfo SystemInfo) map[string]string {
 	labelMap["NODE_NAME"] = sysInfo.UtsNodename
 	return labelMap
+}
+
+func (s *Syst) GetAppType() string {
+	return "SYST"
+}
+
+func (s *Syst) GetAppDetectInfo(b bool) (string, EPcmdType) {
+	return "GET /system_info/.*", SystemInfoOp
+}
+
+func (s *Syst) SetCtlIfOut(c CtlIfOut) {
+	s.EPInfo.SysInfo = c.SysInfo
+	logrus.Debugf("update-sys %+v \n", c.SysInfo)
+}
+
+func (s *Syst) GetCtlIfOut() CtlIfOut {
+	return s.EPInfo
+}
+
+type Syst struct {
+	EPInfo CtlIfOut
+}
+
+func (s *Syst) GetMembership() map[string]bool {
+	panic("unimplemented")
+}
+
+func (s *Syst) SetMembership(map[string]bool) {
+	panic("unimplemented")
+}
+
+func (s *Syst) Parse(map[string]string, http.ResponseWriter, *http.Request) {
+	panic("unimplemented")
+}
+
+func (s *Syst) GetUUID() uuid.UUID {
+	panic("unimplemented")
+}
+
+func (s *Syst) SetUUID(uuid.UUID) {
+	panic("unimplemented")
 }
