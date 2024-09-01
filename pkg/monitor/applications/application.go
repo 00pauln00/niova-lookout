@@ -55,11 +55,12 @@ type Time struct {
 type EPcmdType uint32
 
 const (
-	IdentifyOp   EPcmdType = 0
-	RaftInfoOp   EPcmdType = 1
-	SystemInfoOp EPcmdType = 2
-	NISDInfoOp   EPcmdType = 3
-	CustomOp     EPcmdType = 4
+	IdentifyOp    EPcmdType = 0
+	RaftInfoOp    EPcmdType = 1
+	SystemInfoOp  EPcmdType = 2
+	NISDInfoOp    EPcmdType = 3
+	NCLIENTInfoOp EPcmdType = 4
+	CustomOp      EPcmdType = 5
 )
 
 type CtlIfOut struct { //crappy name

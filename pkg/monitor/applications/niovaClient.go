@@ -75,5 +75,5 @@ func (n *NiovaClient) SetUUID(uuid uuid.UUID) {
 }
 
 func (n *NiovaClient) GetAppDetectInfo(b bool) (string, EPcmdType) {
-	return "GET /.*/.*/.*", CustomOp
+	return "GET /.*/.*/.*", NCLIENTInfoOp
 }
