@@ -16,22 +16,22 @@ type NiovaClient struct {
 type NiovaClientInfo struct {
 	VdevUUID            string         `json:"vdev-uuid"`
 	Status              string         `json:"status"`
-	QueueDepth          int            `json:"queue-depth"`
-	VblksRpRead         int            `json:"vblks-rp-read"`
-	VblksRpWrite        int            `json:"vblks-rp-write"`
-	VblksEcRead         int            `json:"vblks-ec-read"`
-	VblksEcWrite        int            `json:"vblks-ec-write"`
-	VblksS3Read         int            `json:"vblks-s3-read"`
-	VblksHoleRead       int            `json:"vblks-hole-read"`
-	VblksRpRedirectRead int            `json:"vblks-rp-redirect-read"`
-	RpReadSize          map[string]int `json:"rp-read-size"`
-	RpWriteSize         map[string]int `json:"rp-write-size"`
-	EcReadSize          map[string]int `json:"ec-read-size"`
-	EcWriteSize         map[string]int `json:"ec-write-size"`
-	RpReadLat           map[string]int `json:"rp-read-lat"`
-	RpWriteLat          map[string]int `json:"rp-write-lat"`
-	EcReadLat           map[string]int `json:"ec-read-lat"`
-	EcWriteLat          map[string]int `json:"ec-write-lat"`
+	QueueDepth          int            `json:"queue-depth" type:"gauge" metric:"queue_depth"`
+	VblksRpRead         int            `json:"vblks-rp-read" type:"counter" metric:"vblks_rp_read"`
+	VblksRpWrite        int            `json:"vblks-rp-write" type:"counter" metric:"vblks_rp_write"`
+	VblksEcRead         int            `json:"vblks-ec-read" type:"counter" metric:"vblks_ec_read"`
+	VblksEcWrite        int            `json:"vblks-ec-write" type:"counter" metric:"vblks_ec_write"`
+	VblksS3Read         int            `json:"vblks-s3-read" type:"counter" metric:"vblks_s3_read"`
+	VblksHoleRead       int            `json:"vblks-hole-read" type:"counter" metric:"vblks_hole_read"`
+	VblksRpRedirectRead int            `json:"vblks-rp-redirect-read" type:"counter" metric:"vblks_rp_redirect_read"`
+	RpReadSize          map[string]int `json:"rp-read-size" type:"histogram" metric:"rp_read_size"`
+	RpWriteSize         map[string]int `json:"rp-write-size" type:"histogram" metric:"rp_write_size"`
+	EcReadSize          map[string]int `json:"ec-read-size" type:"histogram" metric:"ec_read_size"`
+	EcWriteSize         map[string]int `json:"ec-write-size" type:"histogram" metric:"ec_write_size"`
+	RpReadLat           map[string]int `json:"rp-read-lat" type:"histogram" metric:"rp_read_lat"`
+	RpWriteLat          map[string]int `json:"rp-write-lat" type:"histogram" metric:"rp_write_lat"`
+	EcReadLat           map[string]int `json:"ec-read-lat" type:"histogram" metric:"ec_read_lat"`
+	EcWriteLat          map[string]int `json:"ec-write-lat" type:"histogram" metric:"ec_write_lat"`
 }
 
 func (n *NiovaClient) GetAppType() string {

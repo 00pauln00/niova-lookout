@@ -162,8 +162,8 @@ func (handler *ComHandler) MetricsHandler(w http.ResponseWriter, r *http.Request
 	//Take snapshot of the EpMap
 	epMap := handler.Epc.TakeSnapshot()
 
-	labelMap := make(map[string]string)
 	for _, ep := range epMap {
+		labelMap := make(map[string]string)
 		labelMap = applications.LoadSystemInfo(labelMap, ep.EPInfo.SysInfo)
 		logrus.Debug("label map:", labelMap)
 		ep.App.Parse(labelMap, w, r)
