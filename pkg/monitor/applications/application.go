@@ -63,12 +63,13 @@ const (
 )
 
 type CtlIfOut struct { //crappy name
-	SysInfo         SystemInfo       `json:"system_info,omitempty"`
-	RaftRootEntry   []RaftInfo       `json:"raft_root_entry,omitempty"`
-	NISDInformation []NISDInfo       `json:"niorq_mgr_root_entry,omitempty"`
-	NISDRootEntry   []NISDRoot       `json:"nisd_root_entry,omitempty"`
-	NISDChunk       []NISDChunkInfo  `json:"nisd_chunks,omitempty"`
-	BufSetNodes     []BufferSetNodes `json:"buffer_set_nodes,omitempty"`
+	SysInfo                SystemInfo        `json:"system_info,omitempty"`
+	RaftRootEntry          []RaftInfo        `json:"raft_root_entry,omitempty"`
+	NISDInformation        []NISDInfo        `json:"niorq_mgr_root_entry,omitempty"`
+	NISDRootEntry          []NISDRoot        `json:"nisd_root_entry,omitempty"`
+	NISDChunk              []NISDChunkInfo   `json:"nisd_chunks,omitempty"`
+	BufSetNodes            []BufferSetNodes  `json:"buffer_set_nodes,omitempty"`
+	NiovaClientInformation []NiovaClientInfo `json:"nclient_root_entry,omitempty"`
 }
 
 // custom UnmarshalJSON method used for handling various timestamp formats.
@@ -113,7 +114,7 @@ func DetermineApp(jsonData []byte) (AppI, error) {
 		return &Pmdb{}, nil
 	} else if _, ok := data["nisd_root_entry"]; ok {
 		return &Nisd{}, nil
-	} else if _, ok := data["niova_client"]; ok { //TODO: this needs to be updated to the correct key
+	} else if _, ok := data["nclient_root_entry"]; ok {
 		return &NiovaClient{}, nil
 	}
 
