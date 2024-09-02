@@ -54,8 +54,9 @@ func (n *NiovaClient) Parse(labelMap map[string]string, w http.ResponseWriter, r
 	var output string
 	labelMap["NCLIENT_UUID"] = n.GetUUID().String()
 	labelMap["TYPE"] = n.GetAppType()
-	if condirion := len(n.EPInfo.NiovaClientInformation) == 0; !condirion {
-		output += prometheusHandler.GenericPromDataParser(n.EPInfo.NiovaClientInformation[0], labelMap)
+	if condition := len(n.EPInfo.NiovaClientInformation.VdevUUID) > 0; condition {
+		output += prometheusHandler.GenericPromDataParser(n.EPInfo.NiovaClientInformation, labelMap)
+		output += prometheusHandler.GenericPromDataParser(n.EPInfo.NISDInformation[0], labelMap)
 		output += prometheusHandler.GenericPromDataParser(n.EPInfo.SysInfo, labelMap)
 	}
 	fmt.Fprintf(w, "%s", output)
@@ -63,6 +64,7 @@ func (n *NiovaClient) Parse(labelMap map[string]string, w http.ResponseWriter, r
 
 func (n *NiovaClient) SetCtlIfOut(c CtlIfOut) {
 	n.EPInfo.NiovaClientInformation = c.NiovaClientInformation
+	n.EPInfo.NISDInformation = c.NISDInformation
 	n.EPInfo.SysInfo = c.SysInfo
 }
 
