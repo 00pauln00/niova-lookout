@@ -274,7 +274,11 @@ func (ep *NcsiEP) GetAppType() {
 	outputDir := cmd.ep.epRoot() + "/output"
 	err = watcher.Add(outputDir)
 	if err != nil {
-		logrus.Fatal("Failed to add directory to watcher:", err)
+		if errors.Is(err, syscall.ENOSPC) {
+			logrus.Error("Failed to add directory to watcher due to no space left on device:", err)
+		} else {
+			logrus.Fatal("Failed to add directory to watcher:", err)
+		}
 	}
 
 	done := make(chan bool)
