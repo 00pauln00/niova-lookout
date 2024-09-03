@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 )
 
-type AppI interface {
+type AppIF interface {
 	GetAppDetectInfo(bool) (string, EPcmdType)
-	GetAppType() string
+	GetAppName() string
 	//get the data from ctl-interface into local go struct (unmarshal)
 	SetCtlIfOut(CtlIfOut)
 	GetCtlIfOut() CtlIfOut
@@ -63,7 +63,10 @@ const (
 	CustomOp      EPcmdType = 5
 )
 
-type CtlIfOut struct { //crappy name
+// CtlIfOut represents the control interface output for various application types.
+// Each application type must have a representative structure or object placed here.
+// May consider using pointers for the fields in the future to optimize memory usage and performance.
+type CtlIfOut struct {
 	SysInfo                SystemInfo       `json:"system_info,omitempty"`
 	RaftRootEntry          []RaftInfo       `json:"raft_root_entry,omitempty"`
 	NISDInformation        []NISDInfo       `json:"niorq_mgr_root_entry,omitempty"`
@@ -105,7 +108,7 @@ func chompQuotes(data []byte) []byte {
 	return []byte(s)
 }
 
-func DetermineApp(jsonData []byte) (AppI, error) {
+func DetermineApp(jsonData []byte) (AppIF, error) {
 	var data map[string]interface{}
 	if err := json.Unmarshal(jsonData, &data); err != nil {
 		return &Unrecognized{}, err

@@ -92,7 +92,7 @@ func (p *Pmdb) GetAppDetectInfo(b bool) (string, EPcmdType) {
 	}
 }
 
-func (p *Pmdb) GetAppType() string {
+func (p *Pmdb) GetAppName() string {
 	return "PMDB"
 }
 
@@ -116,7 +116,7 @@ func (p *Pmdb) GetUUID() uuid.UUID {
 func (p *Pmdb) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.Request) {
 	var output string
 	labelMap["PMDB_UUID"] = p.GetUUID().String()
-	labelMap["TYPE"] = p.GetAppType()
+	labelMap["TYPE"] = p.GetAppName()
 	// Loading labelMap with PMDB data
 	labelMap = p.LoadPMDBLabelMap(labelMap)
 	// Parsing exported data

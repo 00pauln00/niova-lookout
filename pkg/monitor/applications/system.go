@@ -36,7 +36,7 @@ func LoadSystemInfo(labelMap map[string]string, sysInfo SystemInfo) map[string]s
 }
 
 func (s *Syst) GetAppType() string {
-	return "SYST"
+	return "SYSTEM"
 }
 
 func (s *Syst) GetAppDetectInfo(b bool) (string, EPcmdType) {
@@ -57,21 +57,21 @@ type Syst struct {
 }
 
 func (s *Syst) GetMembership() map[string]bool {
-	panic("unimplemented")
+	return nil
 }
 
 func (s *Syst) SetMembership(map[string]bool) {
-	panic("unimplemented")
+	return
 }
 
 func (s *Syst) Parse(map[string]string, http.ResponseWriter, *http.Request) {
-	panic("unimplemented")
+	return
 }
 
 func (s *Syst) GetUUID() uuid.UUID {
-	panic("unimplemented")
+	return uuid.UUID{}
 }
 
 func (s *Syst) SetUUID(uuid.UUID) {
-	panic("unimplemented")
+	return
 }

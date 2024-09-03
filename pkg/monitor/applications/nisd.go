@@ -164,7 +164,7 @@ func (n *Nisd) GetMembership() map[string]bool {
 	return n.membership
 }
 
-func (n *Nisd) GetAppType() string {
+func (n *Nisd) GetAppName() string {
 	return "NISD"
 }
 
@@ -196,7 +196,7 @@ func (n *Nisd) GetUUID() uuid.UUID {
 func (n *Nisd) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.Request) {
 	var output string
 	labelMap["NISD_UUID"] = n.GetUUID().String()
-	labelMap["TYPE"] = n.GetAppType()
+	labelMap["TYPE"] = n.GetAppName()
 	// print out node info for debugging
 	logrus.Debug("NISD UUID: ", n.GetUUID())
 	logrus.Debug("NISD Info: ", n.EPInfo)

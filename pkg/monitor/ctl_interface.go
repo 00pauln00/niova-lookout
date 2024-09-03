@@ -31,7 +31,7 @@ const (
 )
 
 type NcsiEP struct {
-	App          applications.AppI     `json:"-"`
+	App          applications.AppIF    `json:"-"`
 	Uuid         uuid.UUID             `json:"-"`
 	Path         string                `json:"-"`
 	Name         string                `json:"name"`
@@ -327,5 +327,5 @@ func (ep *NcsiEP) GetAppType() {
 	if err != nil {
 		logrus.Error("DetermineApp failed:", err)
 	}
-	logrus.Trace("App type determined: ", ep.App.GetAppType())
+	logrus.Trace("App type determined: ", ep.App.GetAppName())
 }

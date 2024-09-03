@@ -11,16 +11,16 @@ type Unrecognized struct {
 	EPInfo CtlIfOut
 }
 
-func (u *Unrecognized) GetAppType() string {
+func (u *Unrecognized) GetAppName() string {
 	return "unrecognized"
 }
 
 func (u *Unrecognized) GetCtlIfOut() CtlIfOut {
-	panic("unimplemented")
+	return u.EPInfo
 }
 
 func (u *Unrecognized) GetMembership() map[string]bool {
-	panic("unimplemented")
+	return nil
 }
 
 func (u *Unrecognized) GetUUID() uuid.UUID {
@@ -32,11 +32,11 @@ func (u *Unrecognized) Parse(map[string]string, http.ResponseWriter, *http.Reque
 }
 
 func (u *Unrecognized) SetCtlIfOut(CtlIfOut) {
-	panic("unimplemented")
+	return
 }
 
 func (u *Unrecognized) SetMembership(map[string]bool) {
-	panic("unimplemented")
+	return
 }
 
 func (u *Unrecognized) SetUUID(uuid uuid.UUID) {

@@ -23,8 +23,8 @@ import (
 
 var SetTagsInterval int = 10
 
-func (handler *ComHandler) SerfMembership() map[string]bool {
-	membership := handler.StorageClient.GetMembership()
+func (h *CommHandler) SerfMembership() map[string]bool {
+	membership := h.StorageClient.GetMembership()
 	returnMap := make(map[string]bool)
 	for _, member := range membership {
 		if member.Status == "alive" {
@@ -34,19 +34,19 @@ func (handler *ComHandler) SerfMembership() map[string]bool {
 	return returnMap
 }
 
-func (handler *ComHandler) StartSerfAgent() error {
-	setLogOutput(handler.SerfLogger)
-	//agentPort := handler.agentPort
-	handler.SerfHandler = serfAgent.SerfAgentHandler{
-		Name:              handler.AgentName,
-		Addr:              net.ParseIP(handler.Addr),
-		ServicePortRangeS: uint16(handler.ServicePortRangeS),
-		ServicePortRangeE: uint16(handler.ServicePortRangeE),
+func (h *CommHandler) StartSerfAgent() error {
+	setLogOutput(h.SerfLogger)
+	//agentPort := h.agentPort
+	h.SerfHandler = serfAgent.SerfAgentHandler{
+		Name:              h.AgentName,
+		Addr:              net.ParseIP(h.Addr),
+		ServicePortRangeS: uint16(h.ServicePortRangeS),
+		ServicePortRangeE: uint16(h.ServicePortRangeE),
 		AgentLogger:       log.Default(),
 	}
 
 	//Start serf agent
-	_, err := handler.SerfHandler.SerfAgentStartup(true)
+	_, err := h.SerfHandler.SerfAgentStartup(true)
 	return err
 }
 
@@ -63,34 +63,34 @@ func setLogOutput(logPath string) {
 		}
 	}
 }
-func (handler *ComHandler) StartClientAPI() {
+func (h *CommHandler) StartClientAPI() {
 	//Init niovakv client API
-	handler.StorageClient = serviceDiscovery.ServiceDiscoveryHandler{
+	h.StorageClient = serviceDiscovery.ServiceDiscoveryHandler{
 		HTTPRetry: 10,
 		SerfRetry: 5,
 	}
 	stop := make(chan int)
 	go func() {
-		err := handler.StorageClient.StartClientAPI(stop, handler.GossipNodesPath)
+		err := h.StorageClient.StartClientAPI(stop, h.GossipNodesPath)
 		if err != nil {
 			logrus.Fatal("Error while starting client API : ", err)
 		}
 	}()
-	handler.StorageClient.TillReady("", 0)
+	h.StorageClient.TillReady("", 0)
 }
 
 // NISD
-func (handler *ComHandler) StartUDPListner() {
+func (h *CommHandler) StartUDPListner() {
 	var err error
-	handler.UdpSocket, err = net.ListenPacket("udp", ":"+handler.UdpPort)
+	h.UdpSocket, err = net.ListenPacket("udp", ":"+h.UdpPort)
 	if err != nil {
 		logrus.Error("UDP listner failed : ", err)
 	}
 
-	defer handler.UdpSocket.Close()
+	defer h.UdpSocket.Close()
 	for {
 		buf := make([]byte, 1024)
-		_, addr, err := handler.UdpSocket.ReadFrom(buf)
+		_, addr, err := h.UdpSocket.ReadFrom(buf)
 		if err != nil {
 			continue
 		}
@@ -98,21 +98,21 @@ func (handler *ComHandler) StartUDPListner() {
 			addr:    addr,
 			message: buf,
 		}
-		go handler.getConfigNSend(udpInfo)
+		go h.getConfigNSend(udpInfo)
 	}
 }
 
 // NISD
-func (handler *ComHandler) getConfigNSend(udpInfo UdpMessage) {
+func (h *CommHandler) getConfigNSend(udpInfo UdpMessage) {
 	//Get uuid from the byte array
 	data := udpInfo.message
 	uuidString := string(data[:36])
 
-	handler.Epc.MarkAlive(uuidString)
+	h.Epc.MarkAlive(uuidString)
 
 	//Send config read request to PMDB server
 	//TODO: make this call a funtion Request which is application specific through the interface
-	responseByte, _ := applications.RequestPMDB(uuidString) //handler.RequestPMDB(uuidString)
+	responseByte, _ := applications.RequestPMDB(uuidString) //h.RequestPMDB(uuidString)
 
 	//Decode response to IPAddr and Port
 	responseObj := requestResponseLib.KVResponse{}
@@ -128,15 +128,15 @@ func (handler *ComHandler) getConfigNSend(udpInfo UdpMessage) {
 	structByteArray := applications.FillNisdCStruct(uuidString, ipaddr, port)
 
 	//Send the data to the node
-	handler.UdpSocket.WriteTo(structByteArray, udpInfo.addr)
+	h.UdpSocket.WriteTo(structByteArray, udpInfo.addr)
 }
 
 // NISD
-func (handler *ComHandler) SetTags() {
+func (h *CommHandler) SetTags() {
 	for {
 		//TODO: make this a function that is application specific through the interface
-		tagData := handler.GetCompressedGossipDataNISD()
-		err := handler.SerfHandler.SetNodeTags(tagData)
+		tagData := h.GetCompressedGossipDataNISD()
+		err := h.SerfHandler.SetNodeTags(tagData)
 		if err != nil {
 			logrus.Debug("setTags: ", err)
 		}
@@ -144,9 +144,9 @@ func (handler *ComHandler) SetTags() {
 	}
 }
 
-func (handler *ComHandler) GetCompressedGossipDataNISD() map[string]string {
+func (h *CommHandler) GetCompressedGossipDataNISD() map[string]string {
 	returnMap := make(map[string]string)
-	epMap := handler.Epc.GetList()
+	epMap := h.Epc.GetList()
 	for _, ep := range epMap {
 		//Get data from map
 		uuid := ep.Uuid.String()
@@ -161,19 +161,19 @@ func (handler *ComHandler) GetCompressedGossipDataNISD() map[string]string {
 		//Fill map; will add extra info in future
 		returnMap[cuuid] = cstatus
 	}
-	httpPort := handler.RecvdPort
+	httpPort := h.RecvdPort
 	returnMap["Type"] = "LOOKOUT"
 	returnMap["Hport"] = strconv.Itoa(httpPort)
 	return returnMap
 }
 
-func (handler *ComHandler) LoadConfigInfo() error {
-	//Get addrs and Rports and store it in handler
-	if _, err := os.Stat(handler.GossipNodesPath); os.IsNotExist(err) {
-		logrus.Error("GossipNodesPath does not exist:", handler.GossipNodesPath)
+func (h *CommHandler) LoadConfigInfo() error {
+	//Get addrs and Rports and store it in h
+	if _, err := os.Stat(h.GossipNodesPath); os.IsNotExist(err) {
+		logrus.Error("GossipNodesPath does not exist:", h.GossipNodesPath)
 		return err
 	}
-	reader, err := os.OpenFile(handler.GossipNodesPath, os.O_RDONLY, 0444)
+	reader, err := os.OpenFile(h.GossipNodesPath, os.O_RDONLY, 0444)
 	if err != nil {
 		logrus.Error("Error while opening GossipNodesPath file")
 		return err
@@ -184,25 +184,25 @@ func (handler *ComHandler) LoadConfigInfo() error {
 	scanner.Scan()
 	IPAddrs := strings.Split(scanner.Text(), " ")
 	logrus.Debug("IPAddrs:", IPAddrs)
-	handler.Addr = IPAddrs[0]
+	h.Addr = IPAddrs[0]
 
 	//TODO: fix this the ip addr contains ports and the ports are not being put into ServicePortRangeS and ServicePortRangeE
 	//Read Ports
 	scanner.Scan()
 	Ports := strings.Split(scanner.Text(), " ")
 	temp, _ := strconv.Atoi(Ports[0])
-	handler.ServicePortRangeS = uint16(temp)
+	h.ServicePortRangeS = uint16(temp)
 	temp, _ = strconv.Atoi(Ports[1])
-	handler.ServicePortRangeE = uint16(temp)
+	h.ServicePortRangeE = uint16(temp)
 
-	handler.makeRange()
+	h.makeRange()
 	return nil
 }
 
-func (handler *ComHandler) makeRange() {
-	a := make([]uint16, handler.ServicePortRangeE-handler.ServicePortRangeS+1)
+func (h *CommHandler) makeRange() {
+	a := make([]uint16, h.ServicePortRangeE-h.ServicePortRangeS+1)
 	for i := range a {
-		a[i] = uint16(handler.ServicePortRangeS + uint16(i))
+		a[i] = uint16(h.ServicePortRangeS + uint16(i))
 	}
-	handler.PortRange = a
+	h.PortRange = a
 }

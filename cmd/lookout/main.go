@@ -24,7 +24,7 @@ type handler struct {
 	promPath     string
 	standalone   bool
 	PortRangeStr string
-	coms         communication.ComHandler
+	coms         communication.CommHandler
 }
 
 func (handler *handler) parseCMDArgs() {
@@ -81,7 +81,7 @@ func main() {
 	var err error
 
 	//Initialize communication handler
-	handler.coms = communication.ComHandler{}
+	handler.coms = communication.CommHandler{}
 
 	//Get cmd line args
 	handler.parseCMDArgs()

@@ -22,7 +22,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type ComHandler struct {
+type CommHandler struct {
 	Addr          string
 	RecvdPort     int
 	StorageClient serviceDiscovery.ServiceDiscoveryHandler
@@ -49,10 +49,10 @@ type UdpMessage struct {
 	message []byte
 }
 
-func (handler *ComHandler) CheckHTTPLiveness() {
+func (h *CommHandler) CheckHTTPLiveness() {
 	var emptyByteArray []byte
 	for {
-		_, err := httpClient.HTTP_Request(emptyByteArray, "127.0.0.1:"+strconv.Itoa(int(handler.RecvdPort))+"/check", false)
+		_, err := httpClient.HTTP_Request(emptyByteArray, "127.0.0.1:"+strconv.Itoa(int(h.RecvdPort))+"/check", false)
 		if err != nil {
 			logrus.Error("HTTP Liveness - ", err)
 		} else {
@@ -63,24 +63,24 @@ func (handler *ComHandler) CheckHTTPLiveness() {
 	}
 }
 
-func (handler *ComHandler) httpHandleRootRequest(w http.ResponseWriter) {
-	fmt.Fprintf(w, "httpHandleRootRequest: %s\n", string(handler.Epc.JsonMarshal()))
+func (h *CommHandler) httpHandleRootRequest(w http.ResponseWriter) {
+	fmt.Fprintf(w, "httpHandleRootRequest: %s\n", string(h.Epc.JsonMarshal()))
 }
 
-func (handler *ComHandler) httpHandleUUIDRequest(w http.ResponseWriter,
+func (h *CommHandler) httpHandleUUIDRequest(w http.ResponseWriter,
 	uuid uuid.UUID) {
 
-	fmt.Fprintf(w, "httpHandleUUIDRequest: %s\n", string(handler.Epc.JsonMarshalUUID(uuid)))
+	fmt.Fprintf(w, "httpHandleUUIDRequest: %s\n", string(h.Epc.JsonMarshalUUID(uuid)))
 }
 
-func (handler *ComHandler) httpHandleRoute(w http.ResponseWriter, r *url.URL) {
+func (h *CommHandler) httpHandleRoute(w http.ResponseWriter, r *url.URL) {
 	splitURL := strings.Split(r.String(), "/v0/")
 
 	if len(splitURL) == 2 && len(splitURL[1]) == 0 {
-		handler.httpHandleRootRequest(w)
+		h.httpHandleRootRequest(w)
 
 	} else if uuid, err := uuid.Parse(splitURL[1]); err == nil {
-		handler.httpHandleUUIDRequest(w, uuid)
+		h.httpHandleUUIDRequest(w, uuid)
 
 	} else {
 		fmt.Fprintln(w, "Invalid request: url", splitURL[1])
@@ -88,17 +88,17 @@ func (handler *ComHandler) httpHandleRoute(w http.ResponseWriter, r *url.URL) {
 
 }
 
-func (handler *ComHandler) HttpHandle(w http.ResponseWriter, r *http.Request) {
-	handler.httpHandleRoute(w, r.URL)
+func (h *CommHandler) HttpHandle(w http.ResponseWriter, r *http.Request) {
+	h.httpHandleRoute(w, r.URL)
 }
 
-func (handler *ComHandler) ServeHttp() error {
+func (h *CommHandler) ServeHttp() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/", handler.QueryHandle)
-	mux.HandleFunc("/v0/", handler.HttpHandle)
-	mux.HandleFunc("/metrics", handler.MetricsHandler)
-	for i := len(handler.PortRange) - 1; i >= 0; i-- {
-		l, err := net.Listen("tcp", ":"+strconv.Itoa(handler.HttpPort))
+	mux.HandleFunc("/v1/", h.QueryHandle)
+	mux.HandleFunc("/v0/", h.HttpHandle)
+	mux.HandleFunc("/metrics", h.MetricsHandler)
+	for i := len(h.PortRange) - 1; i >= 0; i-- {
+		l, err := net.Listen("tcp", ":"+strconv.Itoa(h.HttpPort))
 		if err != nil {
 			if strings.Contains(err.Error(), "bind") {
 				continue
@@ -108,8 +108,8 @@ func (handler *ComHandler) ServeHttp() error {
 			}
 		} else {
 			go func() {
-				*handler.RetPort = handler.HttpPort
-				logrus.Info("Serving at - ", handler.HttpPort)
+				*h.RetPort = h.HttpPort
+				logrus.Info("Serving at - ", h.HttpPort)
 				http.Serve(l, mux)
 			}()
 		}
@@ -118,26 +118,26 @@ func (handler *ComHandler) ServeHttp() error {
 	return nil
 }
 
-func (handler *ComHandler) customQuery(node uuid.UUID, query string) []byte {
-	ep := handler.Epc.Lookup(node)
+func (h *CommHandler) customQuery(node uuid.UUID, query string) []byte {
+	ep := h.Epc.Lookup(node)
 	//If not present
 	if ep == nil {
 		return []byte("Specified App is not present")
 	}
 
 	httpID := "HTTP_" + uuid.New().String()
-	handler.Epc.HttpQuery[httpID] = make(chan []byte, 2)
+	h.Epc.HttpQuery[httpID] = make(chan []byte, 2)
 	ep.CtlCustomQuery(query, httpID)
 
 	var byteOP []byte
 	select {
-	case byteOP = <-handler.Epc.HttpQuery[httpID]:
+	case byteOP = <-h.Epc.HttpQuery[httpID]:
 		break
 	}
 	return byteOP
 }
 
-func (handler *ComHandler) QueryHandle(w http.ResponseWriter, r *http.Request) {
+func (h *CommHandler) QueryHandle(w http.ResponseWriter, r *http.Request) {
 
 	//Decode the NISD request structure
 	requestBytes, err := ioutil.ReadAll(r.Body)
@@ -153,14 +153,14 @@ func (handler *ComHandler) QueryHandle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//Call the appropriate function
-	output := handler.customQuery(requestObj.UUID, requestObj.Cmd)
+	output := h.customQuery(requestObj.UUID, requestObj.Cmd)
 	//Data to writer
 	w.Write(output)
 }
 
-func (handler *ComHandler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
+func (h *CommHandler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 	//Take snapshot of the EpMap
-	epMap := handler.Epc.TakeSnapshot()
+	epMap := h.Epc.TakeSnapshot()
 
 	for _, ep := range epMap {
 		labelMap := make(map[string]string)
@@ -170,9 +170,9 @@ func (handler *ComHandler) MetricsHandler(w http.ResponseWriter, r *http.Request
 	}
 }
 
-func (handler *ComHandler) parseMembershipPrometheus(state string, raftUUID string, nodeUUID string) string {
+func (h *CommHandler) parseMembershipPrometheus(state string, raftUUID string, nodeUUID string) string {
 	var output string
-	membership := handler.Epc.SerfMembershipCB()
+	membership := h.Epc.SerfMembershipCB()
 	for name, isAlive := range membership {
 		var adder, status string
 		if isAlive {
