@@ -60,7 +60,7 @@ func (handler *handler) parseCMDArgs() {
 	nonParsed := flag.Args()
 	logrus.Debug("nonParsed: ", nonParsed)
 	if len(nonParsed) > 0 {
-		logrus.Debugf("Unexpected argument found: %s", nonParsed[1])
+		logrus.Debugf("Unexpected argument found: %s", nonParsed[0])
 		usage(1)
 	}
 
