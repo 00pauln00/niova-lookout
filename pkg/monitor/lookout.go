@@ -132,25 +132,23 @@ func (h *LookoutHandler) tryAdd(uuid uuid.UUID) {
 	if lns == nil {
 		logrus.Trace("Adding new endpoint, UUID: ", uuid)
 		newlns := NcsiEP{
-			Uuid:         uuid,
-			Path:         h.CTLPath + "/" + uuid.String(),
-			Name:         "r-a4e1",
-			NiovaSvcType: "raft",
-			LastReport:   time.Now(),
-			LastClear:    time.Now(),
-			Alive:        true,
-			pendingCmds:  make(map[string]*epCommand),
+			Uuid:        uuid,
+			Path:        h.CTLPath + "/" + uuid.String(),
+			LastReport:  time.Now(),
+			LastClear:   time.Now(),
+			Alive:       true,
+			pendingCmds: make(map[string]*epCommand),
 		}
 		newlns.GetAppType()
-		//TODO: populate the app type, determine what needs put in App and what needs put in NcsiEP
 		newlns.App.SetUUID(uuid)
+		newlns.NiovaSvcType = newlns.App.GetAppName()
 
 		if err := h.EpWatcher.Add(newlns.Path + "/output"); err != nil {
 			logrus.Fatal("Watcher.Add() failed:", err)
 		}
 
 		h.Epc.UpdateEpMap(uuid, &newlns)
-		logrus.Debugf("added: %+v\n", newlns)
+		logrus.Debugf("added: UUID=%s, Path=%s, Alive=%t, NiovaSvcType=%s\n", newlns.Uuid, newlns.Path, newlns.Alive, newlns.NiovaSvcType)
 	}
 }
 

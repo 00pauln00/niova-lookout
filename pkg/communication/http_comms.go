@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/00pauln00/niova-lookout/pkg/monitor"
-	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -164,7 +163,7 @@ func (h *CommHandler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 
 	for _, ep := range epMap {
 		labelMap := make(map[string]string)
-		labelMap = applications.LoadSystemInfo(labelMap, ep.EPInfo.SysInfo)
+		labelMap = ep.App.LoadSystemInfo(labelMap)
 		logrus.Debug("label map:", labelMap)
 		ep.App.Parse(labelMap, w, r)
 	}
