@@ -46,3 +46,11 @@ func (u *Unrecognized) SetUUID(uuid uuid.UUID) {
 func (u *Unrecognized) GetAppDetectInfo(b bool) (string, EPcmdType) {
 	return "GET /.*/.*/.*", CustomOp
 }
+
+func (u *Unrecognized) GetAltName() string {
+	return ""
+}
+
+func (u *Unrecognized) LoadSystemInfo(labelMap map[string]string) map[string]string {
+	return labelMap
+}

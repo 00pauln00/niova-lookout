@@ -237,28 +237,43 @@ func (ep *NcsiEP) Remove() {
 }
 
 func (ep *NcsiEP) Detect() error {
+	var err error
 	if ep.App == nil {
 		return errors.New("app is nil")
 	}
 	if ep.Alive {
-		var err error
-		cmdStr, op := ep.App.GetAppDetectInfo(false)
-		cmd := epCommand{ep: ep, cmd: cmdStr, op: op}
-		cmd.submit()
-		if cmd.err != nil && cmd.op == applications.SystemInfoOp {
-			cmdStr, op = ep.App.GetAppDetectInfo(true)
-			cmd = epCommand{ep: ep, cmd: cmdStr, op: op}
-			cmd.submit()
-			return cmd.err
-		}
-
+		err = ep.GetAppInfo()
 		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
 			logrus.Debugf("Endpoint %s timed out\n", ep.Uuid)
 			ep.Alive = false
 		}
-		return err
+	} else {
+		//see if app came back up every 60 seconds
+		if time.Since(ep.LastClear) > time.Second*60 {
+			err = ep.GetAppInfo()
+			//TODO: may be a better way to set alive. this sets alive even if its not and waits for the next detect to set it back to false if dead
+			if err == nil {
+				ep.Alive = true
+			}
+			ep.LastClear = time.Now()
+		}
 	}
-	return nil
+	return err
+}
+
+func (ep *NcsiEP) GetAppInfo() error {
+	var err error
+	cmdStr, op := ep.App.GetAppDetectInfo(false)
+	cmd := epCommand{ep: ep, cmd: cmdStr, op: op}
+	cmd.submit()
+	if cmd.err != nil && cmd.op == applications.SystemInfoOp {
+		cmdStr, op = ep.App.GetAppDetectInfo(true)
+		cmd = epCommand{ep: ep, cmd: cmdStr, op: op}
+		cmd.submit()
+		return cmd.err
+	}
+	ep.Name = ep.App.GetAltName()
+	return err
 }
 
 func (ep *NcsiEP) GetAppType() {
@@ -311,7 +326,7 @@ func (ep *NcsiEP) GetAppType() {
 	select {
 	case <-done:
 		logrus.Trace("File write detected")
-	case <-time.After(5 * time.Second): // Timeout after 10 seconds
+	case <-time.After(1 * time.Second): // Timeout after 1 seconds
 		logrus.Warn("Timeout waiting for file write")
 	}
 
@@ -325,7 +340,7 @@ func (ep *NcsiEP) GetAppType() {
 	output := c.getOutJSON()
 	ep.App, err = applications.DetermineApp(output)
 	if err != nil {
-		logrus.Error("DetermineApp failed:", err)
+		logrus.Error("DetermineApp for ", ep.Uuid, " failed:", err)
 	}
-	logrus.Trace("App type determined: ", ep.App.GetAppName())
+	logrus.Trace("App type for ", ep.Uuid, " determined: ", ep.App.GetAppName())
 }

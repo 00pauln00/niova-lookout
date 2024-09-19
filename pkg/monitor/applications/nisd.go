@@ -156,6 +156,11 @@ func (n *Nisd) LoadNISDLabelMap(labelMap map[string]string) map[string]string {
 	return labelMap
 }
 
+func (n *Nisd) LoadSystemInfo(labelMap map[string]string) map[string]string {
+	labelMap["NODE_NAME"] = n.EPInfo.SysInfo.UtsNodename
+	return labelMap
+}
+
 func (n *Nisd) SetMembership(membership map[string]bool) {
 	n.membership = membership
 }
@@ -193,6 +198,13 @@ func (n *Nisd) GetUUID() uuid.UUID {
 	return n.uuid
 }
 
+func (n *Nisd) GetAltName() string {
+	if len(n.EPInfo.NISDRootEntry) == 0 {
+		return ""
+	}
+	return n.EPInfo.NISDRootEntry[0].AltName
+}
+
 func (n *Nisd) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.Request) {
 	var output string
 	labelMap["NISD_UUID"] = n.GetUUID().String()
@@ -208,7 +220,7 @@ func (n *Nisd) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.
 		// Parse NISDRootEntry
 		output += prometheusHandler.GenericPromDataParser(n.EPInfo.NISDRootEntry[0], labelMap)
 		// Parse nisd system info
-		output += prometheusHandler.GenericPromDataParser(n.EPInfo.SysInfo, labelMap)
+		output += prometheusHandler.GenericPromDataParser(*n.EPInfo.SysInfo, labelMap)
 		// Iterate and parse each NISDChunk if populated
 		for _, chunk := range n.EPInfo.NISDChunk {
 			// load labelMap with NISD chunk data

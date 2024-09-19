@@ -30,8 +30,8 @@ type SystemInfo struct {
 	RusageInvolCtsw         int       `json:"rusage.invol_ctsw" type:"gauge" metric:"SYSINFO_in_vol_ctsw"`
 }
 
-func LoadSystemInfo(labelMap map[string]string, sysInfo SystemInfo) map[string]string {
-	labelMap["NODE_NAME"] = sysInfo.UtsNodename
+func (s *Syst) LoadSystemInfo(labelMap map[string]string) map[string]string {
+	labelMap["NODE_NAME"] = s.EPInfo.SysInfo.UtsNodename
 	return labelMap
 }
 
@@ -74,4 +74,8 @@ func (s *Syst) GetUUID() uuid.UUID {
 
 func (s *Syst) SetUUID(uuid.UUID) {
 	return
+}
+
+func (s *Syst) GetAltName() string {
+	return ""
 }
