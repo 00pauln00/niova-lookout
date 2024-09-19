@@ -340,7 +340,7 @@ func (ep *NcsiEP) GetAppType() {
 	output := c.getOutJSON()
 	ep.App, err = applications.DetermineApp(output)
 	if err != nil {
-		logrus.Error("DetermineApp failed:", err)
+		logrus.Error("DetermineApp for ", ep.Uuid, " failed:", err)
 	}
-	logrus.Trace("App type determined: ", ep.App.GetAppName())
+	logrus.Trace("App type for ", ep.Uuid, " determined: ", ep.App.GetAppName())
 }
