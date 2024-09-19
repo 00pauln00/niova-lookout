@@ -326,7 +326,7 @@ func (ep *NcsiEP) GetAppType() {
 	select {
 	case <-done:
 		logrus.Trace("File write detected")
-	case <-time.After(5 * time.Second): // Timeout after 10 seconds
+	case <-time.After(1 * time.Second): // Timeout after 1 seconds
 		logrus.Warn("Timeout waiting for file write")
 	}
 
