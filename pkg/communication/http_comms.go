@@ -2,9 +2,6 @@ package communication
 
 import (
 	"bytes"
-	"common/httpClient"
-	"common/serviceDiscovery"
-	"controlplane/serfAgent"
 	"encoding/gob"
 	"fmt"
 	"io/ioutil"
@@ -14,6 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
+	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
+	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 
 	"github.com/00pauln00/niova-lookout/pkg/monitor"
 	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"

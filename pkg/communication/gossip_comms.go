@@ -3,9 +3,6 @@ package communication
 import (
 	"bufio"
 	"bytes"
-	"common/serviceDiscovery"
-	compressionLib "common/specificCompressionLib"
-	"controlplane/serfAgent"
 	"encoding/gob"
 	"encoding/json"
 	"io/ioutil"
@@ -15,6 +12,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
+
+	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
+
+	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 
 	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
