@@ -49,6 +49,11 @@ type RaftInfo struct {
 	ReadLatencyMsec   Histogram `json:"read-latency-msec"`
 }
 
+func (p *Pmdb) LoadSystemInfo(labelMap map[string]string) map[string]string {
+	labelMap["NODE_NAME"] = p.EPInfo.SysInfo.UtsNodename
+	return labelMap
+}
+
 // requestPMDB sends a read request to the storage client and returns the response.
 func RequestPMDB(key string) ([]byte, error) {
 	request := requestResponseLib.KVRequest{
@@ -113,6 +118,10 @@ func (p *Pmdb) GetUUID() uuid.UUID {
 	return p.uuid
 }
 
+func (p *Pmdb) GetAltName() string {
+	return ""
+}
+
 func (p *Pmdb) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.Request) {
 	var output string
 	labelMap["PMDB_UUID"] = p.GetUUID().String()
@@ -126,7 +135,7 @@ func (p *Pmdb) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.
 	// Parsing follower data
 	output += p.getFollowerStats()
 	// Parsing system info
-	output += prometheusHandler.GenericPromDataParser(p.EPInfo.SysInfo, labelMap)
+	output += prometheusHandler.GenericPromDataParser(*p.EPInfo.SysInfo, labelMap)
 	fmt.Fprintf(w, "%s", output)
 }
 
@@ -162,4 +171,8 @@ func (p *Pmdb) parseMembershipPrometheus() string {
 
 	}
 	return output
+}
+
+func (p *Pmdb) IsMonitoringEnabled() bool {
+	return true
 }

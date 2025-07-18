@@ -12,6 +12,7 @@ import (
 type AppIF interface {
 	GetAppDetectInfo(bool) (string, EPcmdType)
 	GetAppName() string
+	GetAltName() string
 	//get the data from ctl-interface into local go struct (unmarshal)
 	SetCtlIfOut(CtlIfOut)
 	GetCtlIfOut() CtlIfOut
@@ -20,8 +21,10 @@ type AppIF interface {
 	SetMembership(map[string]bool)
 	GetMembership() map[string]bool
 	Parse(map[string]string, http.ResponseWriter, *http.Request)
+	LoadSystemInfo(labelMap map[string]string) map[string]string
 	//obtain gossip data from app  (can return null for app types which do not use gossip) //structByteArray := applications.FillNisdCStruct(uuidString, ipaddr, port)
 	//obtain metrics data from app
+	IsMonitoringEnabled() bool
 }
 
 type Histogram struct {
@@ -67,13 +70,13 @@ const (
 // Each application type must have a representative structure or object placed here.
 // May consider using pointers for the fields in the future to optimize memory usage and performance.
 type CtlIfOut struct {
-	SysInfo                SystemInfo       `json:"system_info,omitempty"`
+	SysInfo                *SystemInfo      `json:"system_info,omitempty"`
 	RaftRootEntry          []RaftInfo       `json:"raft_root_entry,omitempty"`
 	NISDInformation        []NISDInfo       `json:"niorq_mgr_root_entry,omitempty"`
 	NISDRootEntry          []NISDRoot       `json:"nisd_root_entry,omitempty"`
 	NISDChunk              []NISDChunkInfo  `json:"nisd_chunks,omitempty"`
 	BufSetNodes            []BufferSetNodes `json:"buffer_set_nodes,omitempty"`
-	NiovaClientInformation NiovaClientInfo  `json:"nclient_root_entry,omitempty"`
+	NiovaClientInformation *NiovaClientInfo `json:"nclient_root_entry,omitempty"`
 }
 
 // custom UnmarshalJSON method used for handling various timestamp formats.
@@ -123,4 +126,19 @@ func DetermineApp(jsonData []byte) (AppIF, error) {
 	}
 
 	return &Unrecognized{}, errors.New("Unrecognized application")
+}
+
+func GetAppByName(name string) (AppIF, error) {
+	switch name {
+	case "NCLIENT":
+		return &NiovaClient{}, nil
+	case "PMDB":
+		return &Pmdb{}, nil
+	case "NISD":
+		return &Nisd{}, nil
+	case "unrecognized":
+		return &Unrecognized{}, nil
+	default:
+		return nil, errors.New("unknown application type: " + name)
+	}
 }

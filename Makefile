@@ -1,17 +1,15 @@
-TODO: fix this makefile
+BINARY_NAME = niova-lookout
+BUILD_DIR = cmd/lookout
+OUTPUT_DIR = .
+OUTPUT_PATH = $(OUTPUT_DIR)/$(BINARY_NAME)
 
-DIR=/tmp
+.PHONY: all build clean
 
-install_all: compile nisdMonitor install
+all: build
 
-compile:
-	echo "Compiling lookout"
-
-nisdMonitor:
-	cd nisdMonitor && go mod tidy && go build
-
-install:
-	cp nisdMonitor/nisdLookout ${DIR}/libexec/niova/nisdLookout
+build:
+	cd $(BUILD_DIR) && go build -o ../../$(OUTPUT_PATH)
+	@echo "Built $(BINARY_NAME) at $(OUTPUT_PATH)"
 
 clean:
 	go clean

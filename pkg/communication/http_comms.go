@@ -6,6 +6,7 @@ import (
 	"common/serviceDiscovery"
 	"controlplane/serfAgent"
 	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -13,17 +14,18 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/00pauln00/niova-lookout/pkg/monitor"
-	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
 type CommHandler struct {
-	Addr          string
+	Addr          net.IP   //string
+	addrList      []net.IP //[]string
 	RecvdPort     int
 	StorageClient serviceDiscovery.ServiceDiscoveryHandler
 	UdpSocket     net.PacketConn
@@ -31,7 +33,6 @@ type CommHandler struct {
 	//serf
 	SerfHandler       serfAgent.SerfAgentHandler
 	AgentName         string
-	AgentPort         int16
 	AgentRPCPort      int16
 	GossipNodesPath   string
 	SerfLogger        string
@@ -42,6 +43,21 @@ type CommHandler struct {
 	HttpPort          int
 	RetPort           *int
 	Epc               *monitor.EPContainer
+	LookoutUUID       string
+	Lookouts          map[string]*LookoutInfo
+	mu                sync.Mutex
+}
+
+type LookoutInfo struct {
+	IPAddrs   []string
+	HTTPPort  string
+	PortRange string
+	Apps      map[uuid.UUID]MonitoredApp
+	LastSeen  string
+}
+type MonitoredApp struct {
+	Status string
+	Type   string
 }
 
 type UdpMessage struct {
@@ -52,7 +68,7 @@ type UdpMessage struct {
 func (h *CommHandler) CheckHTTPLiveness() {
 	var emptyByteArray []byte
 	for {
-		_, err := httpClient.HTTP_Request(emptyByteArray, "127.0.0.1:"+strconv.Itoa(int(h.RecvdPort))+"/check", false)
+		_, err := httpClient.HTTP_Request(emptyByteArray, "127.0.0.1:"+strconv.Itoa(int(*h.RetPort))+"/check", false)
 		if err != nil {
 			logrus.Error("HTTP Liveness - ", err)
 		} else {
@@ -64,12 +80,12 @@ func (h *CommHandler) CheckHTTPLiveness() {
 }
 
 func (h *CommHandler) httpHandleRootRequest(w http.ResponseWriter) {
+
 	fmt.Fprintf(w, "httpHandleRootRequest: %s\n", string(h.Epc.JsonMarshal()))
 }
 
 func (h *CommHandler) httpHandleUUIDRequest(w http.ResponseWriter,
 	uuid uuid.UUID) {
-
 	fmt.Fprintf(w, "httpHandleUUIDRequest: %s\n", string(h.Epc.JsonMarshalUUID(uuid)))
 }
 
@@ -95,7 +111,10 @@ func (h *CommHandler) HttpHandle(w http.ResponseWriter, r *http.Request) {
 func (h *CommHandler) ServeHttp() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/", h.QueryHandle)
+	//TODO: fix some value not being populated?
 	mux.HandleFunc("/v0/", h.HttpHandle)
+	//TODO: fix lookouts to report status of other lookouts.
+	mux.HandleFunc("/lookouts", h.LookoutsHandler)
 	mux.HandleFunc("/metrics", h.MetricsHandler)
 	for i := len(h.PortRange) - 1; i >= 0; i-- {
 		l, err := net.Listen("tcp", ":"+strconv.Itoa(h.HttpPort))
@@ -126,12 +145,13 @@ func (h *CommHandler) customQuery(node uuid.UUID, query string) []byte {
 	}
 
 	httpID := "HTTP_" + uuid.New().String()
-	h.Epc.HttpQuery[httpID] = make(chan []byte, 2)
+	key := "lookout_" + httpID
+	h.Epc.HttpQuery[key] = make(chan []byte, 2)
 	ep.CtlCustomQuery(query, httpID)
 
 	var byteOP []byte
 	select {
-	case byteOP = <-h.Epc.HttpQuery[httpID]:
+	case byteOP = <-h.Epc.HttpQuery[key]:
 		break
 	}
 	return byteOP
@@ -163,32 +183,35 @@ func (h *CommHandler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 	epMap := h.Epc.TakeSnapshot()
 
 	for _, ep := range epMap {
-		labelMap := make(map[string]string)
-		labelMap = applications.LoadSystemInfo(labelMap, ep.EPInfo.SysInfo)
-		logrus.Debug("label map:", labelMap)
-		ep.App.Parse(labelMap, w, r)
+		// Only report if not dead
+		if ep.Alive {
+			labelMap := make(map[string]string)
+			labelMap = ep.App.LoadSystemInfo(labelMap)
+			logrus.Debug("label map:", labelMap)
+			ep.App.Parse(labelMap, w, r)
+		}
 	}
 }
 
-func (h *CommHandler) parseMembershipPrometheus(state string, raftUUID string, nodeUUID string) string {
-	var output string
-	membership := h.Epc.SerfMembershipCB()
-	for name, isAlive := range membership {
-		var adder, status string
-		if isAlive {
-			adder = "1"
-			status = "online"
-		} else {
-			adder = "0"
-			status = "offline"
-		}
-		if nodeUUID == name {
-			output += "\n" + fmt.Sprintf(`node_status{uuid="%s"state="%s"status="%s"raftUUID="%s"} %s`, name, state, status, raftUUID, adder)
-		} else {
-			// since we do not know the state of other nodes
-			output += "\n" + fmt.Sprintf(`node_status{uuid="%s"status="%s"raftUUID="%s"} %s`, name, status, raftUUID, adder)
-		}
-
+func (h *CommHandler) LookoutsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-	return output
+
+	h.mu.Lock()
+	jsonData, err := json.MarshalIndent(h.Lookouts, "", "\t")
+	h.mu.Unlock()
+
+	if err != nil {
+		logrus.Error("Error marshaling Lookouts to JSON: ", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, err = w.Write(jsonData)
+	if err != nil {
+		logrus.Error("Error writing /lookouts response: ", err)
+	}
 }

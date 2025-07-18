@@ -50,14 +50,18 @@ func (n *NiovaClient) GetUUID() uuid.UUID {
 	return n.Uuid
 }
 
+func (n *NiovaClient) GetAltName() string {
+	return ""
+}
+
 func (n *NiovaClient) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.Request) {
 	var output string
 	labelMap["NCLIENT_UUID"] = n.GetUUID().String()
 	labelMap["TYPE"] = n.GetAppName()
 	if condition := len(n.EPInfo.NiovaClientInformation.VdevUUID) > 0; condition {
-		output += prometheusHandler.GenericPromDataParser(n.EPInfo.NiovaClientInformation, labelMap)
+		output += prometheusHandler.GenericPromDataParser(*n.EPInfo.NiovaClientInformation, labelMap)
 		output += prometheusHandler.GenericPromDataParser(n.EPInfo.NISDInformation[0], labelMap)
-		output += prometheusHandler.GenericPromDataParser(n.EPInfo.SysInfo, labelMap)
+		output += prometheusHandler.GenericPromDataParser(*n.EPInfo.SysInfo, labelMap)
 	}
 	fmt.Fprintf(w, "%s", output)
 }
@@ -78,4 +82,13 @@ func (n *NiovaClient) SetUUID(uuid uuid.UUID) {
 
 func (n *NiovaClient) GetAppDetectInfo(b bool) (string, EPcmdType) {
 	return "GET /.*/.*/.*", NCLIENTInfoOp
+}
+
+func (n *NiovaClient) LoadSystemInfo(labelMap map[string]string) map[string]string {
+	labelMap["NODE_NAME"] = n.EPInfo.SysInfo.UtsNodename
+	return labelMap
+}
+
+func (n *NiovaClient) IsMonitoringEnabled() bool {
+	return true
 }

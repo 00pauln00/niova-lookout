@@ -40,9 +40,10 @@ func (epc *EPContainer) MarkAlive(serviceUUID string) error {
 	return nil
 }
 
-func (epc *EPContainer) LivenessCheck() {
+func (epc *EPContainer) RefreshEndpoints() {
 	for _, ep := range epc.epMap {
-		ep.Remove()
+		// only check liveness for local EPs
+		ep.RemoveStaleFiles()
 		err := ep.Detect()
 		if err != nil {
 			logrus.Error(err)
@@ -72,7 +73,7 @@ func (epc *EPContainer) ProcessEndpoint(cmpstr string, uuid uuid.UUID, event *fs
 		var output []byte
 		err := ep.Complete(cmpstr, &output)
 		if err != nil {
-			logrus.Debug(err, event.Name)
+			logrus.Debug("ProcessEndpoint - ", err, event.Name)
 		}
 	}
 }

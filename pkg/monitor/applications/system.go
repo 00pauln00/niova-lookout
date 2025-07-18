@@ -7,6 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// TODO: This may have to become an object of the app. the system itself is not an app but the system in which the app is running on.
 type SystemInfo struct {
 	CurrentTime             Time      `json:"current_time"`
 	StartTime               Time      `json:"start_time"`
@@ -30,13 +31,13 @@ type SystemInfo struct {
 	RusageInvolCtsw         int       `json:"rusage.invol_ctsw" type:"gauge" metric:"SYSINFO_in_vol_ctsw"`
 }
 
-func LoadSystemInfo(labelMap map[string]string, sysInfo SystemInfo) map[string]string {
-	labelMap["NODE_NAME"] = sysInfo.UtsNodename
+func (s *Syst) LoadSystemInfo(labelMap map[string]string) map[string]string {
+	labelMap["NODE_NAME"] = s.EPInfo.SysInfo.UtsNodename
 	return labelMap
 }
 
 func (s *Syst) GetAppType() string {
-	return "SYSTEM"
+	return "SYST"
 }
 
 func (s *Syst) GetAppDetectInfo(b bool) (string, EPcmdType) {
@@ -53,7 +54,8 @@ func (s *Syst) GetCtlIfOut() CtlIfOut {
 }
 
 type Syst struct {
-	EPInfo CtlIfOut
+	EPInfo     CtlIfOut
+	fromGossip bool
 }
 
 func (s *Syst) GetMembership() map[string]bool {
@@ -74,4 +76,19 @@ func (s *Syst) GetUUID() uuid.UUID {
 
 func (s *Syst) SetUUID(uuid.UUID) {
 	return
+}
+
+func (s *Syst) GetAltName() string {
+	return ""
+}
+
+func (s *Syst) IsMonitoringEnabled() bool {
+	return true
+}
+
+func (s *Syst) SetFromGossip(fromGossip bool) {
+	s.fromGossip = fromGossip
+}
+func (s *Syst) FromGossip() bool {
+	return s.fromGossip
 }
