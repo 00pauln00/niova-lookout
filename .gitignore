@@ -1,5 +1,7 @@
 TAGS lookout.go~ niova-lookout
 
-cmd/lookout/targets.json
+targets.json
 
-cmd/lookout/lookout
+niova-lookout
+
+nodes
