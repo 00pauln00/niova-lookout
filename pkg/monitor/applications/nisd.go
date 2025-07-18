@@ -13,6 +13,7 @@ import (
 
 // #include <unistd.h>
 // #include <string.h>
+// #include <stdlib.h>
 // //#include <errno.h>
 // //int usleep(useconds_t usec);
 /*
@@ -32,6 +33,8 @@ type Nisd struct {
 	uuid       uuid.UUID
 	EPInfo     CtlIfOut
 	membership map[string]bool
+	fromGossip bool
+	address    string // IP address of the NISD instance
 }
 
 type NISDInfo struct {
@@ -139,10 +142,13 @@ type BufferSetNodes struct {
 }
 
 func FillNisdCStruct(UUID string, ipaddr string, port int) []byte {
-	//FIXME: free the memory
 	nisd_peer_config := C.struct_nisd_config{}
-	C.strncpy(&(nisd_peer_config.nisd_uuid[0]), C.CString(UUID), C.ulong(len(UUID)+1))
-	C.strncpy(&(nisd_peer_config.nisd_ipaddr[0]), C.CString(ipaddr), C.ulong(len(ipaddr)+1))
+	uuidCStr := C.CString(UUID)
+	defer C.free(unsafe.Pointer(uuidCStr))
+	ipaddrCStr := C.CString(ipaddr)
+	defer C.free(unsafe.Pointer(ipaddrCStr))
+	C.strncpy(&(nisd_peer_config.nisd_uuid[0]), uuidCStr, C.ulong(len(UUID)+1))
+	C.strncpy(&(nisd_peer_config.nisd_ipaddr[0]), ipaddrCStr, C.ulong(len(ipaddr)+1))
 	nisd_peer_config.nisdc_addr_len = C.int(len(ipaddr))
 	nisd_peer_config.nisd_port = C.int(port)
 	returnData := C.GoBytes(unsafe.Pointer(&nisd_peer_config), C.sizeof_struct_nisd_config)
@@ -211,7 +217,6 @@ func (n *Nisd) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.
 	labelMap["TYPE"] = n.GetAppName()
 	// print out node info for debugging
 	logrus.Debug("NISD UUID: ", n.GetUUID())
-	logrus.Debug("NISD Info: ", n.EPInfo)
 	// Load labelMap with NISD data if present
 	if condition := len(n.EPInfo.NISDRootEntry) == 0; !condition {
 		labelMap = n.LoadNISDLabelMap(labelMap)
@@ -241,4 +246,8 @@ func (n *Nisd) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.
 		}
 	}
 	fmt.Fprintf(w, "%s", output)
+}
+
+func (n *Nisd) IsMonitoringEnabled() bool {
+	return true
 }

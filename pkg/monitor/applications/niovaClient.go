@@ -88,3 +88,7 @@ func (n *NiovaClient) LoadSystemInfo(labelMap map[string]string) map[string]stri
 	labelMap["NODE_NAME"] = n.EPInfo.SysInfo.UtsNodename
 	return labelMap
 }
+
+func (n *NiovaClient) IsMonitoringEnabled() bool {
+	return true
+}

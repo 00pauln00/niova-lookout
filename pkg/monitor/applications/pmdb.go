@@ -172,3 +172,7 @@ func (p *Pmdb) parseMembershipPrometheus() string {
 	}
 	return output
 }
+
+func (p *Pmdb) IsMonitoringEnabled() bool {
+	return true
+}

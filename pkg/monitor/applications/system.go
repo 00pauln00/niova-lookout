@@ -7,6 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// TODO: This may have to become an object of the app. the system itself is not an app but the system in which the app is running on.
 type SystemInfo struct {
 	CurrentTime             Time      `json:"current_time"`
 	StartTime               Time      `json:"start_time"`
@@ -36,7 +37,7 @@ func (s *Syst) LoadSystemInfo(labelMap map[string]string) map[string]string {
 }
 
 func (s *Syst) GetAppType() string {
-	return "SYSTEM"
+	return "SYST"
 }
 
 func (s *Syst) GetAppDetectInfo(b bool) (string, EPcmdType) {
@@ -53,7 +54,8 @@ func (s *Syst) GetCtlIfOut() CtlIfOut {
 }
 
 type Syst struct {
-	EPInfo CtlIfOut
+	EPInfo     CtlIfOut
+	fromGossip bool
 }
 
 func (s *Syst) GetMembership() map[string]bool {
@@ -78,4 +80,15 @@ func (s *Syst) SetUUID(uuid.UUID) {
 
 func (s *Syst) GetAltName() string {
 	return ""
+}
+
+func (s *Syst) IsMonitoringEnabled() bool {
+	return true
+}
+
+func (s *Syst) SetFromGossip(fromGossip bool) {
+	s.fromGossip = fromGossip
+}
+func (s *Syst) FromGossip() bool {
+	return s.fromGossip
 }

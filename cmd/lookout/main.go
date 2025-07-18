@@ -14,8 +14,6 @@ import (
 var RecvdPort int
 
 type handler struct {
-	udpPort      string
-	udpSocket    net.PacketConn
 	lookout      monitor.LookoutHandler
 	epc          monitor.EPContainer
 	endpointRoot *string
@@ -23,6 +21,7 @@ type handler struct {
 	ctlPath      *string
 	promPath     string
 	standalone   bool
+	pmdb         bool
 	PortRangeStr string
 	coms         communication.CommHandler
 }
@@ -32,6 +31,8 @@ func (handler *handler) parseCMDArgs() {
 		showHelp      *bool
 		showHelpShort *bool
 		logLevel      *string
+		agentAddr     string
+		lookoutLogger string
 	)
 
 	handler.ctlPath = flag.String("dir", "/tmp/.niova", "endpoint directory root")
@@ -39,26 +40,40 @@ func (handler *handler) parseCMDArgs() {
 	showHelp = flag.Bool("help", false, "print help")
 	logLevel = flag.String("log", "info", "set log level (panic, fatal, error, warn, info, debug, trace)")
 
-	flag.BoolVar(&handler.standalone, "std", true, "Set flag to true to run lookout standalone for NISD") // set to gossip and false default
-	flag.StringVar(&handler.udpPort, "u", "1054", "UDP port for NISD communication")
+	flag.BoolVar(&handler.standalone, "std", false, "Set flag to true to run lookout standalone for NISD")
+	flag.BoolVar(&handler.pmdb, "pmdb", false, "Set flag to true to run lookout with pmdb")
+	flag.StringVar(&handler.coms.UdpPort, "u", "1054", "UDP port for NISD communication")
 	flag.IntVar(&handler.httpPort, "hp", 6666, "HTTP port for communication")
 	flag.StringVar(&handler.PortRangeStr, "p", "", "Port range for the lookout to export data endpoints to, should be space seperated")
 	flag.StringVar(&handler.coms.AgentName, "n", uuid.New().String(), "Agent name")
-	flag.StringVar(&handler.coms.Addr, "a", "127.0.0.1", "Agent addr")
-	flag.StringVar(&handler.coms.GossipNodesPath, "c", "", "PMDB server gossip info")
+	flag.StringVar(&agentAddr, "a", "127.0.0.1", "Agent addr")
+	flag.StringVar(&handler.coms.GossipNodesPath, "c", "./gossipNodes", "Gossip Node File Path")
 	flag.StringVar(&handler.promPath, "pr", "./targets.json", "Prometheus targets info")
 	flag.StringVar(&handler.coms.SerfLogger, "s", "serf.log", "Serf logs")
+	flag.StringVar(&lookoutLogger, "l", "", "Lookout logs")
 	flag.StringVar(&handler.coms.RaftUUID, "r", "", "Raft UUID")
+	flag.StringVar(&handler.coms.LookoutUUID, "lu", uuid.NewString(), "Lookout UUID")
 	flag.Parse()
+
+	if lookoutLogger != "" {
+		file, err := os.OpenFile(lookoutLogger, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+		if err != nil {
+			logrus.Fatalf("Error opening lookout log file: %v", err)
+		}
+		logrus.SetOutput(file)
+	}
+
+	// Convert agentAddr string to net.IP after parsing
+	handler.coms.Addr = net.ParseIP(agentAddr)
 
 	level, err := logrus.ParseLevel(*logLevel)
 	if err != nil {
 		logrus.Fatalf("Invalid log level: %v", err)
 	}
+
 	logrus.SetLevel(level)
 
 	nonParsed := flag.Args()
-	logrus.Debug("nonParsed: ", nonParsed)
 	if len(nonParsed) > 0 {
 		logrus.Debugf("Unexpected argument found: %s", nonParsed[0])
 		usage(1)
@@ -94,22 +109,23 @@ func main() {
 	} else {
 		handler.coms.PortRange = make([]uint16, 1)
 	}
-	//Start pmdb service client discovery api
+
 	if !handler.standalone {
-		handler.coms.StartClientAPI()
+		logrus.Trace("Starting Serf")
 
 		//Start serf agent
 		err = handler.coms.StartSerfAgent()
-		handler.coms.ServicePortRangeS = handler.coms.PortRange[0]
-		handler.coms.ServicePortRangeE = handler.coms.PortRange[len(handler.coms.PortRange)-1]
 		if err != nil {
-			logrus.Fatal("Error while starting serf agent : ", err)
+			logrus.Fatal("Error while starting serf agent: ", err)
 		}
 
-		//Start udp listener
-		go handler.coms.StartUDPListner()
-
+		if handler.pmdb {
+			logrus.Trace("Starting Client API for PMDB")
+			handler.coms.StartClientAPI()
+			go handler.coms.StartUDPListner()
+		}
 	}
+
 	portAddr = &RecvdPort
 	//Start lookout monitoring
 	logrus.Debug("Port Range: ", handler.coms.PortRange)
@@ -132,6 +148,7 @@ func main() {
 	handler.coms.HttpPort = handler.httpPort
 
 	go func() {
+		logrus.Trace("Starting http server")
 		err_r := handler.coms.ServeHttp()
 		errs <- err_r
 		if <-errs != nil {
@@ -142,17 +159,18 @@ func main() {
 		*handler.coms.RetPort = -1
 		logrus.Fatal("Error while starting http server : ", err)
 	}
+
+	if !handler.standalone {
+		//Wait till http lookout http is up and running
+		handler.coms.CheckHTTPLiveness()
+		go handler.coms.SetTags()
+		go handler.coms.GetTags()
+	}
+
 	//Start lookout
+	logrus.Trace("Starting lookout")
 	er := handler.lookout.Start()
 	if er != nil {
 		logrus.Fatal("Error while starting Lookout : ", er)
-	}
-	//Question: We never get here because this is set to happen after run has been set to false. is this correct?
-	if !handler.standalone {
-		//QUESTION: these are both infinite loops. should htey be ran as go functions?
-		//Wait till http lookout http is up and running
-		handler.coms.CheckHTTPLiveness()
-		//Set serf tags
-		handler.coms.SetTags()
 	}
 }

@@ -54,3 +54,7 @@ func (u *Unrecognized) GetAltName() string {
 func (u *Unrecognized) LoadSystemInfo(labelMap map[string]string) map[string]string {
 	return labelMap
 }
+
+func (u *Unrecognized) IsMonitoringEnabled() bool {
+	return true
+}

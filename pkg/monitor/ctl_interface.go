@@ -38,6 +38,7 @@ type NcsiEP struct {
 	NiovaSvcType string                `json:"type"`
 	Port         int                   `json:"port"`
 	LastReport   time.Time             `json:"-"`
+	LastRequest  time.Time             `json:"-"`
 	LastClear    time.Time             `json:"-"`
 	Alive        bool                  `json:"responsive"`
 	EPInfo       applications.CtlIfOut `json:"ep_info"` //May need to change this to a pointer
@@ -103,9 +104,10 @@ func (cmd *epCommand) loadOutfile() {
 // Makes a 'unique' filename for the command and adds it to the map
 func (cmd *epCommand) prep() {
 	if cmd.fn == "" {
-		cmd.fn = "lookout_ncsiep_" + strconv.FormatInt(int64(os.Getpid()), 10) +
+		cmd.fn = "testncsiep_" + strconv.FormatInt(int64(os.Getpid()), 10) +
 			"_" + strconv.FormatInt(int64(time.Now().Nanosecond()), 10)
 	}
+	cmd.fn = "lookout_" + cmd.fn
 	cmd.cmd = cmd.cmd + "\nOUTFILE /" + cmd.fn + "\n"
 
 	// Add the cmd into the endpoint's pending cmd map
@@ -118,10 +120,13 @@ func (cmd *epCommand) write() {
 		logrus.Errorf("ioutil.WriteFile(): %s", cmd.err)
 		return
 	}
+	cmd.ep.LastRequest = time.Now()
+	logrus.Tracef("Command written to %s: %s", cmd.getInFnam(), cmd.cmd)
 }
 
 func (cmd *epCommand) submit() {
 	if err := cmd.ep.mayQueueCmd(); err == false {
+		logrus.Error("Too many pending commands for endpoint: ", cmd.ep.Uuid)
 		return
 	}
 	cmd.prep()
@@ -129,10 +134,24 @@ func (cmd *epCommand) submit() {
 }
 
 func (ep *NcsiEP) mayQueueCmd() bool {
-	if len(ep.pendingCmds) < maxPendingCmdsEP {
-		return true
+	logrus.Tracef("Queue size for endpoint %s: %d/%d", ep.Uuid, len(ep.pendingCmds), maxPendingCmdsEP)
+	// Enforces a max queue depth of 1 for internal scheduling logic,
+	// while still allowing externally-triggered commands (e.g., via /v1/) to be processed.
+	if len(ep.pendingCmds) > 0 {
+		logrus.Debugf("Endpoint %s has %d pending commands, waiting for them to complete", ep.Uuid, len(ep.pendingCmds))
+		for len(ep.pendingCmds) > 0 {
+			if time.Since(ep.LastRequest) > time.Second*EPtimeoutSec {
+				logrus.Debugf("Endpoint %s has pending commands for over %f seconds, removing them from the queue", ep.Uuid, EPtimeoutSec)
+				for cmdName := range ep.pendingCmds {
+					ep.removeCmd(cmdName)
+				}
+				ep.Alive = false
+				break // exit the wait loop
+			}
+			msleep()
+		}
 	}
-	return false
+	return len(ep.pendingCmds) == 0
 }
 
 func (ep *NcsiEP) addCmd(cmd *epCommand) error {
@@ -167,6 +186,7 @@ func (ep *NcsiEP) epRoot() string {
 }
 
 func (ep *NcsiEP) CtlCustomQuery(customCMD string, ID string) error {
+	logrus.Tracef("Custom query for endpoint %s: %s", ep.Uuid, customCMD)
 	cmd := epCommand{ep: ep, cmd: customCMD, op: applications.CustomOp, fn: ID}
 	cmd.submit()
 	return cmd.err
@@ -176,6 +196,9 @@ func (ep *NcsiEP) update(ctlData applications.CtlIfOut) {
 	ep.App.SetCtlIfOut(ctlData)
 	ep.EPInfo = ep.App.GetCtlIfOut()
 	ep.LastReport = time.Now()
+	if !ep.Alive {
+		ep.Alive = true
+	}
 }
 
 func (ep *NcsiEP) Complete(cmdName string, output *[]byte) error {
@@ -227,7 +250,7 @@ func (ep *NcsiEP) removeFiles(folder string) {
 	}
 }
 
-func (ep *NcsiEP) Remove() {
+func (ep *NcsiEP) RemoveStaleFiles() {
 	//Remove stale ctl files
 	input_path := ep.Path + "/input/"
 	ep.removeFiles(input_path)
@@ -236,6 +259,7 @@ func (ep *NcsiEP) Remove() {
 	ep.removeFiles(output_path)
 }
 
+// Called every sleep time (default 20 seconds) to check if the endpoint is alive
 func (ep *NcsiEP) Detect() error {
 	var err error
 	if ep.App == nil {
@@ -249,12 +273,8 @@ func (ep *NcsiEP) Detect() error {
 		}
 	} else {
 		//see if app came back up every 60 seconds
-		if time.Since(ep.LastClear) > time.Second*60 {
+		if time.Since(ep.LastClear) > time.Second*EPtimeoutSec {
 			err = ep.GetAppInfo()
-			//TODO: may be a better way to set alive. this sets alive even if its not and waits for the next detect to set it back to false if dead
-			if err == nil {
-				ep.Alive = true
-			}
 			ep.LastClear = time.Now()
 		}
 	}
@@ -276,7 +296,7 @@ func (ep *NcsiEP) GetAppInfo() error {
 	return err
 }
 
-func (ep *NcsiEP) GetAppType() {
+func (ep *NcsiEP) IdentifyApplicationType() {
 	logrus.Trace("GetAppType for: ", ep.Uuid)
 	cmd := epCommand{ep: ep, cmd: "GET /.*", op: applications.IdentifyOp, fn: "lookout_identify"}
 
@@ -322,7 +342,6 @@ func (ep *NcsiEP) GetAppType() {
 
 	cmd.submit()
 
-	logrus.Trace("Waiting for file to be written")
 	select {
 	case <-done:
 		logrus.Trace("File write detected")

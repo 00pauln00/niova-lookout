@@ -24,6 +24,7 @@ type AppIF interface {
 	LoadSystemInfo(labelMap map[string]string) map[string]string
 	//obtain gossip data from app  (can return null for app types which do not use gossip) //structByteArray := applications.FillNisdCStruct(uuidString, ipaddr, port)
 	//obtain metrics data from app
+	IsMonitoringEnabled() bool
 }
 
 type Histogram struct {
@@ -125,4 +126,19 @@ func DetermineApp(jsonData []byte) (AppIF, error) {
 	}
 
 	return &Unrecognized{}, errors.New("Unrecognized application")
+}
+
+func GetAppByName(name string) (AppIF, error) {
+	switch name {
+	case "NCLIENT":
+		return &NiovaClient{}, nil
+	case "PMDB":
+		return &Pmdb{}, nil
+	case "NISD":
+		return &Nisd{}, nil
+	case "unrecognized":
+		return &Unrecognized{}, nil
+	default:
+		return nil, errors.New("unknown application type: " + name)
+	}
 }
