@@ -2,10 +2,11 @@ package applications
 
 import (
 	"bytes"
-	"common/serviceDiscovery"
 	"encoding/gob"
 	"fmt"
 	"net/http"
+
+	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 
 	"github.com/00pauln00/niova-lookout/pkg/prometheusHandler"
 	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
