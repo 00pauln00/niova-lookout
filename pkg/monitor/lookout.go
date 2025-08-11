@@ -174,27 +174,27 @@ func (h *LookoutHandler) scan() {
 func (h *LookoutHandler) tryAdd(uuid uuid.UUID) {
 	lns := h.Epc.Lookup(uuid)
 	if lns == nil {
-		newlns := NcsiEP{
+		ep := NcsiEP{
 			Uuid:        uuid,
 			Path:        h.CTLPath + "/" + uuid.String(),
 			LastReport:  time.Now(),
 			LastClear:   time.Now(),
-			Alive:       true,
+			Alive:       false,
 			pendingCmds: make(map[string]*epCommand),
 		}
-		newlns.IdentifyApplicationType()
-		newlns.App.SetUUID(uuid)
-		newlns.NiovaSvcType = newlns.App.GetAppName()
+		ep.IdentifyApplicationType()
+		ep.App.SetUUID(uuid)
+		ep.NiovaSvcType = ep.App.GetAppName()
 
-		if err := h.EpWatcher.Add(newlns.Path + "/output"); err != nil {
+		if err := h.EpWatcher.Add(ep.Path + "/output"); err != nil {
 			logrus.Fatal("Watcher.Add() failed:", err)
 		}
 
-		h.Epc.UpdateEpMap(uuid, &newlns)
+		h.Epc.UpdateEpMap(uuid, &ep)
 		logrus.Infof(
 			"added: UUID=%s, Path=%s, Alive=%t, NiovaSvcType=%s",
-			newlns.Uuid, newlns.Path, newlns.Alive,
-			newlns.NiovaSvcType)
+			ep.Uuid, ep.Path, ep.Alive,
+			ep.NiovaSvcType)
 	}
 }
 
