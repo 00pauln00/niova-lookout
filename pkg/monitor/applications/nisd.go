@@ -163,7 +163,14 @@ func (n *Nisd) LoadNISDLabelMap(labelMap map[string]string) map[string]string {
 }
 
 func (n *Nisd) LoadSystemInfo(labelMap map[string]string) map[string]string {
+
+	if n.EPInfo.SysInfo == nil {
+		logrus.Warnf("NISD %s is not ready", n.GetUUID().String())
+		return nil
+	}
+
 	labelMap["NODE_NAME"] = n.EPInfo.SysInfo.UtsNodename
+
 	return labelMap
 }
 

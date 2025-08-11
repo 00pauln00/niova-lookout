@@ -187,9 +187,12 @@ func (h *CommHandler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 		// Only report if not dead
 		if ep.Alive {
 			labelMap := make(map[string]string)
+
 			labelMap = ep.App.LoadSystemInfo(labelMap)
-			logrus.Debug("label map:", labelMap)
-			ep.App.Parse(labelMap, w, r)
+
+			if len(labelMap) > 0 {
+				ep.App.Parse(labelMap, w, r)
+			}
 		}
 	}
 }
