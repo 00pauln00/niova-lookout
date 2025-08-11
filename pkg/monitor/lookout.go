@@ -28,13 +28,20 @@ type LookoutHandler struct {
 func (h *LookoutHandler) monitor() error {
 	var err error = nil
 	var sleepTime time.Duration
-	sleepTimeStr := os.Getenv("LOOKOUT_SLEEP")
-	sleepTime, err = time.ParseDuration(sleepTimeStr)
-	if err != nil {
-		sleepTime = 20 * time.Second
-		logrus.Debug("Bad environment variable - Defaulting to standard value")
+
+	sleepEnv := os.Getenv("LOOKOUT_SLEEP")
+	if sleepEnv != "" {
+		sleepTime, err = time.ParseDuration(sleepEnv)
+		if err != nil {
+			logrus.Warn("LOOKOUT_SLEEP has invalid contents: defaulting to standard value '20s'\n\t\tSee ParseDuration(): (example: <num-secs>s | <num-ms>ms)")
+		}
 	}
-	logrus.Tracef("Lookout monitor sleep time: %s", sleepTime)
+
+	if sleepTime == 0 {
+		sleepTime = 20 * time.Second
+	}
+
+	logrus.Info("Lookout monitor sleep time: ", sleepTime)
 
 	for h.run == true {
 		var tmp_stb syscall.Stat_t
