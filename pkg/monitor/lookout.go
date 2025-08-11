@@ -179,7 +179,7 @@ func (h *LookoutHandler) tryAdd(uuid uuid.UUID) {
 			Path:        h.CTLPath + "/" + uuid.String(),
 			LastReport:  time.Now(),
 			LastClear:   time.Now(),
-			Alive:       false,
+			Alive:       true,
 			pendingCmds: make(map[string]*epCommand),
 		}
 		ep.IdentifyApplicationType()
