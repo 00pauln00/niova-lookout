@@ -102,7 +102,6 @@ func (h *CommHandler) httpHandleRoute(w http.ResponseWriter, r *url.URL) {
 	} else {
 		fmt.Fprintln(w, "Invalid request: url", splitURL[1])
 	}
-
 }
 
 func (h *CommHandler) HttpHandle(w http.ResponseWriter, r *http.Request) {
@@ -112,11 +111,14 @@ func (h *CommHandler) HttpHandle(w http.ResponseWriter, r *http.Request) {
 func (h *CommHandler) ServeHttp() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/", h.QueryHandle)
+
 	//TODO: fix some value not being populated?
 	mux.HandleFunc("/v0/", h.HttpHandle)
+
 	//TODO: fix lookouts to report status of other lookouts.
 	mux.HandleFunc("/lookouts", h.LookoutsHandler)
 	mux.HandleFunc("/metrics", h.MetricsHandler)
+
 	for i := len(h.PortRange) - 1; i >= 0; i-- {
 		l, err := net.Listen("tcp", ":"+strconv.Itoa(h.HttpPort))
 		if err != nil {
@@ -128,8 +130,11 @@ func (h *CommHandler) ServeHttp() error {
 			}
 		} else {
 			go func() {
+				// Reenable to wait for lookout startup
+				//monitor.LookoutWaitUntilReady()
+
 				*h.RetPort = h.HttpPort
-				logrus.Info("Serving at - ", h.HttpPort)
+				logrus.Info("Serving at: ", h.HttpPort)
 				http.Serve(l, mux)
 			}()
 		}
@@ -187,9 +192,12 @@ func (h *CommHandler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 		// Only report if not dead
 		if ep.Alive {
 			labelMap := make(map[string]string)
+
 			labelMap = ep.App.LoadSystemInfo(labelMap)
-			logrus.Debug("label map:", labelMap)
-			ep.App.Parse(labelMap, w, r)
+
+			if len(labelMap) > 0 {
+				ep.App.Parse(labelMap, w, r)
+			}
 		}
 	}
 }

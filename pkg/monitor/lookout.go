@@ -25,16 +25,44 @@ type LookoutHandler struct {
 	EpWatcher *fsnotify.Watcher
 }
 
+type lookout_state int
+
+const (
+	BOOTING lookout_state = iota
+	RUNNING
+	SHUTDOWN
+)
+
+var lookoutState lookout_state = BOOTING
+
+func LookoutWaitUntilReady() {
+	for lookoutState != RUNNING {
+		logrus.Debug("waiting for RUNNING")
+		time.Sleep(1 * time.Second)
+	}
+}
+
 func (h *LookoutHandler) monitor() error {
 	var err error = nil
 	var sleepTime time.Duration
-	sleepTimeStr := os.Getenv("LOOKOUT_SLEEP")
-	sleepTime, err = time.ParseDuration(sleepTimeStr)
-	if err != nil {
-		sleepTime = 20 * time.Second
-		logrus.Debug("Bad environment variable - Defaulting to standard value")
+
+	if lookoutState != BOOTING {
+		panic("Invalid lookoutState")
 	}
-	logrus.Tracef("Lookout monitor sleep time: %s", sleepTime)
+
+	sleepEnv := os.Getenv("LOOKOUT_SLEEP")
+	if sleepEnv != "" {
+		sleepTime, err = time.ParseDuration(sleepEnv)
+		if err != nil {
+			logrus.Warn("LOOKOUT_SLEEP has invalid contents: defaulting to standard value '20s'\n\t\tSee ParseDuration(): (example: <num-secs>s | <num-ms>ms)")
+		}
+	}
+
+	if sleepTime == 0 {
+		sleepTime = 20 * time.Second
+	}
+
+	logrus.Info("Lookout monitor sleep time: ", sleepTime)
 
 	for h.run == true {
 		var tmp_stb syscall.Stat_t
@@ -50,6 +78,13 @@ func (h *LookoutHandler) monitor() error {
 		}
 
 		h.Epc.RefreshEndpoints()
+
+		// Perform one endpoint scan before entering RUNNING mode
+		if lookoutState == BOOTING {
+			logrus.Debug("enter RUNNING")
+			lookoutState = RUNNING
+		}
+
 		time.Sleep(sleepTime)
 	}
 
@@ -93,7 +128,7 @@ func (h *LookoutHandler) processInotifyEvent(event *fsnotify.Event) {
 	splitPath := strings.Split(event.Name, "/")
 	cmpstr := splitPath[len(splitPath)-1]
 	uuid, err := uuid.Parse(splitPath[len(splitPath)-3])
-	logrus.Tracef("cmpstr: %s, uuid: %s\n", cmpstr, uuid.String())
+
 	if err != nil {
 		logrus.Error("uuid.Parse(): ", err)
 		return
@@ -101,15 +136,19 @@ func (h *LookoutHandler) processInotifyEvent(event *fsnotify.Event) {
 
 	//temp file exclusion
 	if strings.Contains(cmpstr, ".") {
-		logrus.Trace("Skipping temp file")
+		logrus.Tracef("Skipping temp file event=%s", event.Name)
 		return
 	}
 
 	//Only include files contain "lookout"
 	if !strings.Contains(cmpstr, "lookout") {
-		logrus.Trace("Skipping file not containing 'lookout'")
+		logrus.Tracef("Skipping file not containing 'lookout' event=%s",
+			event.Name)
 		return
 	}
+
+	logrus.Infof("ev-complete: uuid: %s, event=%s",
+		uuid.String(), event.Name)
 
 	h.Epc.HandleHttpQuery(cmpstr, uuid)
 	h.Epc.ProcessEndpoint(cmpstr, uuid, event)
@@ -124,7 +163,8 @@ func (h *LookoutHandler) scan() {
 	for _, file := range files {
 		//TODO: Do we need to support removal of stale items? yes
 		if uuid, err := uuid.Parse(file.Name()); err == nil {
-			if (h.Epc.MonitorUUID == uuid.String()) || (h.Epc.MonitorUUID == "*") {
+			if (h.Epc.MonitorUUID == "*") ||
+				(h.Epc.MonitorUUID == uuid.String()) {
 				h.tryAdd(uuid)
 			}
 		}
@@ -151,7 +191,10 @@ func (h *LookoutHandler) tryAdd(uuid uuid.UUID) {
 		}
 
 		h.Epc.UpdateEpMap(uuid, &newlns)
-		logrus.Debugf("added: UUID=%s, Path=%s, Alive=%t, NiovaSvcType=%s\n", newlns.Uuid, newlns.Path, newlns.Alive, newlns.NiovaSvcType)
+		logrus.Infof(
+			"added: UUID=%s, Path=%s, Alive=%t, NiovaSvcType=%s",
+			newlns.Uuid, newlns.Path, newlns.Alive,
+			newlns.NiovaSvcType)
 	}
 }
 
