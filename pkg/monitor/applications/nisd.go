@@ -222,8 +222,10 @@ func (n *Nisd) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.
 	var output string
 	labelMap["NISD_UUID"] = n.GetUUID().String()
 	labelMap["TYPE"] = n.GetAppName()
+
 	// print out node info for debugging
-	logrus.Debug("NISD UUID: ", n.GetUUID())
+	logrus.Trace("NISD UUID: ", n.GetUUID())
+
 	// Load labelMap with NISD data if present
 	if condition := len(n.EPInfo.NISDRootEntry) == 0; !condition {
 		labelMap = n.LoadNISDLabelMap(labelMap)

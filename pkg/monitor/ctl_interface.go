@@ -96,7 +96,8 @@ func (cmd *epCommand) loadOutfile() {
 	// Try to read the file
 	cmd.outJSON, cmd.err = ioutil.ReadFile(cmd.getOutFnam())
 	if cmd.err != nil {
-		logrus.Errorf("checkOutFile(): %s getOutFnam %s", cmd.err, cmd.getOutFnam())
+		logrus.Errorf("checkOutFile(): %s getOutFnam %s",
+			cmd.err, cmd.getOutFnam())
 	}
 	return
 }
@@ -104,8 +105,9 @@ func (cmd *epCommand) loadOutfile() {
 // Makes a 'unique' filename for the command and adds it to the map
 func (cmd *epCommand) prep() {
 	if cmd.fn == "" {
-		cmd.fn = "testncsiep_" + strconv.FormatInt(int64(os.Getpid()), 10) +
-			"_" + strconv.FormatInt(int64(time.Now().Nanosecond()), 10)
+		cmd.fn = "testncsiep_" +
+			strconv.FormatInt(int64(os.Getpid()), 10) + "_" +
+			strconv.FormatInt(int64(time.Now().Nanosecond()), 10)
 	}
 	cmd.fn = "lookout_" + cmd.fn
 	cmd.cmd = cmd.cmd + "\nOUTFILE /" + cmd.fn + "\n"
@@ -121,12 +123,21 @@ func (cmd *epCommand) write() {
 		return
 	}
 	cmd.ep.LastRequest = time.Now()
-	logrus.Tracef("Command written to %s: %s", cmd.getInFnam(), cmd.cmd)
+
+	if logrus.IsLevelEnabled(logrus.DebugLevel) {
+		logrus.Infof("ev-submit: uuid=%s %s: %s",
+			cmd.ep.Uuid, cmd.getInFnam(), cmd.cmd)
+
+	} else if logrus.IsLevelEnabled(logrus.InfoLevel) {
+		logrus.Infof("ev-submit: uuid=%s %s",
+			cmd.ep.Uuid, cmd.getInFnam())
+	}
 }
 
 func (cmd *epCommand) submit() {
 	if err := cmd.ep.mayQueueCmd(); err == false {
-		logrus.Error("Too many pending commands for endpoint: ", cmd.ep.Uuid)
+		logrus.Error("Too many pending commands for endpoint: ",
+			cmd.ep.Uuid)
 		return
 	}
 	cmd.prep()
@@ -192,7 +203,7 @@ func (ep *NcsiEP) epRoot() string {
 }
 
 func (ep *NcsiEP) CtlCustomQuery(customCMD string, ID string) error {
-	logrus.Tracef("Custom query for endpoint %s: %s", ep.Uuid, customCMD)
+	logrus.Infof("Custom query for endpoint %s: %s", ep.Uuid, customCMD)
 	cmd := epCommand{ep: ep, cmd: customCMD, op: applications.CustomOp, fn: ID}
 	cmd.submit()
 	return cmd.err
@@ -303,8 +314,14 @@ func (ep *NcsiEP) GetAppInfo() error {
 }
 
 func (ep *NcsiEP) IdentifyApplicationType() {
-	logrus.Trace("GetAppType for: ", ep.Uuid)
-	cmd := epCommand{ep: ep, cmd: "GET /.*", op: applications.IdentifyOp, fn: "lookout_identify"}
+	logrus.Info("GetAppType for: ", ep.Uuid)
+
+	cmd := epCommand{
+		ep:  ep,
+		cmd: "GET /.*",
+		op:  applications.IdentifyOp,
+		fn:  "lookout_identify",
+	}
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -331,8 +348,9 @@ func (ep *NcsiEP) IdentifyApplicationType() {
 					logrus.Trace("Watcher events channel closed")
 					return
 				}
-				logrus.Trace("Event received:", event)
-				if (event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create) && event.Name == outputDir+"/"+cmd.fn {
+				logrus.Debug("Event received:", event)
+				if (event.Op&fsnotify.Write == fsnotify.Write ||
+					event.Op&fsnotify.Create == fsnotify.Create) && event.Name == outputDir+"/"+cmd.fn {
 					logrus.Trace("File modified:", event.Name)
 					done <- true
 				}
@@ -350,7 +368,7 @@ func (ep *NcsiEP) IdentifyApplicationType() {
 
 	select {
 	case <-done:
-		logrus.Trace("File write detected")
+		logrus.Debug("File write detected")
 	case <-time.After(1 * time.Second): // Timeout after 1 seconds
 		logrus.Warn("Timeout waiting for file write")
 	}
@@ -367,5 +385,5 @@ func (ep *NcsiEP) IdentifyApplicationType() {
 	if err != nil {
 		logrus.Error("DetermineApp for ", ep.Uuid, " failed:", err)
 	}
-	logrus.Trace("App type for ", ep.Uuid, " determined: ", ep.App.GetAppName())
+	logrus.Info("App type for ", ep.Uuid, " determined: ", ep.App.GetAppName())
 }

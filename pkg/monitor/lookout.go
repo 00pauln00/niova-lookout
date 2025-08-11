@@ -25,9 +25,27 @@ type LookoutHandler struct {
 	EpWatcher *fsnotify.Watcher
 }
 
+type lookout_state int
+
+const (
+	BOOTING lookout_state = iota
+	RUNNING
+	SHUTDOWN
+)
+
+var LookoutState lookout_state = BOOTING
+
+func LookoutIsReady() bool {
+	return LookoutState == RUNNING
+}
+
 func (h *LookoutHandler) monitor() error {
 	var err error = nil
 	var sleepTime time.Duration
+
+	if LookoutState != BOOTING {
+		panic("Invalid LookoutState")
+	}
 
 	sleepEnv := os.Getenv("LOOKOUT_SLEEP")
 	if sleepEnv != "" {
@@ -57,6 +75,12 @@ func (h *LookoutHandler) monitor() error {
 		}
 
 		h.Epc.RefreshEndpoints()
+
+		// Perform one endpoint scan before entering RUNNING mode
+		if LookoutState == BOOTING {
+			LookoutState = RUNNING
+		}
+
 		time.Sleep(sleepTime)
 	}
 
@@ -100,7 +124,7 @@ func (h *LookoutHandler) processInotifyEvent(event *fsnotify.Event) {
 	splitPath := strings.Split(event.Name, "/")
 	cmpstr := splitPath[len(splitPath)-1]
 	uuid, err := uuid.Parse(splitPath[len(splitPath)-3])
-	logrus.Tracef("cmpstr: %s, uuid: %s\n", cmpstr, uuid.String())
+
 	if err != nil {
 		logrus.Error("uuid.Parse(): ", err)
 		return
@@ -108,15 +132,19 @@ func (h *LookoutHandler) processInotifyEvent(event *fsnotify.Event) {
 
 	//temp file exclusion
 	if strings.Contains(cmpstr, ".") {
-		logrus.Trace("Skipping temp file")
+		logrus.Tracef("Skipping temp file event=%s", event.Name)
 		return
 	}
 
 	//Only include files contain "lookout"
 	if !strings.Contains(cmpstr, "lookout") {
-		logrus.Trace("Skipping file not containing 'lookout'")
+		logrus.Tracef("Skipping file not containing 'lookout' event=%s",
+			event.Name)
 		return
 	}
+
+	logrus.Infof("ev-complete: uuid: %s, event=%s",
+		uuid.String(), event.Name)
 
 	h.Epc.HandleHttpQuery(cmpstr, uuid)
 	h.Epc.ProcessEndpoint(cmpstr, uuid, event)
@@ -158,7 +186,10 @@ func (h *LookoutHandler) tryAdd(uuid uuid.UUID) {
 		}
 
 		h.Epc.UpdateEpMap(uuid, &newlns)
-		logrus.Debugf("added: UUID=%s, Path=%s, Alive=%t, NiovaSvcType=%s\n", newlns.Uuid, newlns.Path, newlns.Alive, newlns.NiovaSvcType)
+		logrus.Debugf(
+			"added: UUID=%s, Path=%s, Alive=%t, NiovaSvcType=%s",
+			newlns.Uuid, newlns.Path, newlns.Alive,
+			newlns.NiovaSvcType)
 	}
 }
 

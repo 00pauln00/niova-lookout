@@ -2,8 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"net"
 	"os"
+	"path"
+	"runtime"
 
 	"github.com/00pauln00/niova-lookout/pkg/communication"
 	"github.com/00pauln00/niova-lookout/pkg/monitor"
@@ -56,12 +59,26 @@ func (handler *handler) parseCMDArgs() {
 	flag.Parse()
 
 	if lookoutLogger != "" {
-		file, err := os.OpenFile(lookoutLogger, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+		file, err := os.OpenFile(lookoutLogger,
+			os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+
 		if err != nil {
 			logrus.Fatalf("Error opening lookout log file: %v", err)
 		}
 		logrus.SetOutput(file)
 	}
+
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+		CallerPrettyfier: func(f *runtime.Frame) (string, string) {
+			// file:line format
+			filename := path.Base(f.File)
+			funcName := path.Base(f.Function)
+			return funcName, fmt.Sprintf("%s:%d", filename, f.Line)
+		},
+	})
+
+	logrus.SetReportCaller(true)
 
 	// Convert agentAddr string to net.IP after parsing
 	handler.coms.Addr = net.ParseIP(agentAddr)
@@ -148,7 +165,7 @@ func main() {
 	handler.coms.HttpPort = handler.httpPort
 
 	go func() {
-		logrus.Trace("Starting http server")
+		logrus.Info("Starting http server")
 		err_r := handler.coms.ServeHttp()
 		errs <- err_r
 		if <-errs != nil {
@@ -168,7 +185,7 @@ func main() {
 	}
 
 	//Start lookout
-	logrus.Trace("Starting lookout")
+	logrus.Info("Starting lookout")
 	er := handler.lookout.Start()
 	if er != nil {
 		logrus.Fatal("Error while starting Lookout : ", er)
