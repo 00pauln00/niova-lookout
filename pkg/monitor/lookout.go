@@ -33,18 +33,21 @@ const (
 	SHUTDOWN
 )
 
-var LookoutState lookout_state = BOOTING
+var lookoutState lookout_state = BOOTING
 
-func LookoutIsReady() bool {
-	return LookoutState == RUNNING
+func LookoutWaitUntilReady() {
+	for lookoutState != RUNNING {
+		logrus.Debug("waiting for RUNNING")
+		time.Sleep(1 * time.Second)
+	}
 }
 
 func (h *LookoutHandler) monitor() error {
 	var err error = nil
 	var sleepTime time.Duration
 
-	if LookoutState != BOOTING {
-		panic("Invalid LookoutState")
+	if lookoutState != BOOTING {
+		panic("Invalid lookoutState")
 	}
 
 	sleepEnv := os.Getenv("LOOKOUT_SLEEP")
@@ -77,8 +80,9 @@ func (h *LookoutHandler) monitor() error {
 		h.Epc.RefreshEndpoints()
 
 		// Perform one endpoint scan before entering RUNNING mode
-		if LookoutState == BOOTING {
-			LookoutState = RUNNING
+		if lookoutState == BOOTING {
+			logrus.Debug("enter RUNNING")
+			lookoutState = RUNNING
 		}
 
 		time.Sleep(sleepTime)

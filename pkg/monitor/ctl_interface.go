@@ -71,10 +71,6 @@ func (cmd *epCommand) getOutJSON() []byte {
 	return []byte(cmd.outJSON)
 }
 
-func msleep() {
-	C.usleep(1000)
-}
-
 func (cmd *epCommand) checkOutFile() error {
 	var tmp_stb syscall.Stat_t
 	if err := syscall.Stat(cmd.getOutFnam(), &tmp_stb); err != nil {
@@ -125,7 +121,7 @@ func (cmd *epCommand) write() {
 	cmd.ep.LastRequest = time.Now()
 
 	if logrus.IsLevelEnabled(logrus.DebugLevel) {
-		logrus.Infof("ev-submit: uuid=%s %s: %s",
+		logrus.Debugf("ev-submit: uuid=%s %s: %s",
 			cmd.ep.Uuid, cmd.getInFnam(), cmd.cmd)
 
 	} else if logrus.IsLevelEnabled(logrus.InfoLevel) {
