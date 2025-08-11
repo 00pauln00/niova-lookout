@@ -134,21 +134,27 @@ func (cmd *epCommand) submit() {
 }
 
 func (ep *NcsiEP) mayQueueCmd() bool {
-	logrus.Tracef("Queue size for endpoint %s: %d/%d", ep.Uuid, len(ep.pendingCmds), maxPendingCmdsEP)
+	logrus.Debugf("uuid=%s pending=%d max=%d",
+		ep.Uuid, len(ep.pendingCmds), maxPendingCmdsEP)
+
 	// Enforces a max queue depth of 1 for internal scheduling logic,
-	// while still allowing externally-triggered commands (e.g., via /v1/) to be processed.
+	// while still allowing externally-triggered commands (e.g., via /v1/)
+	// to be processed.
 	if len(ep.pendingCmds) > 0 {
-		logrus.Debugf("Endpoint %s has %d pending commands, waiting for them to complete", ep.Uuid, len(ep.pendingCmds))
-		for len(ep.pendingCmds) > 0 {
+		logrus.Debugf("ep %s has %d pending cmds",
+			ep.Uuid, len(ep.pendingCmds))
+
+		if len(ep.pendingCmds) > 0 {
 			if time.Since(ep.LastRequest) > time.Second*EPtimeoutSec {
-				logrus.Debugf("Endpoint %s has pending commands for over %f seconds, removing them from the queue", ep.Uuid, EPtimeoutSec)
-				for cmdName := range ep.pendingCmds {
-					ep.removeCmd(cmdName)
+				logrus.Debugf("ep %s has stale cmds (%f seconds), removing them from the queue",
+					ep.Uuid, EPtimeoutSec)
+
+				for x := range ep.pendingCmds {
+					logrus.Info("remove cmd: ", ep.Uuid, x)
+					ep.removeCmd(x)
 				}
 				ep.Alive = false
-				break // exit the wait loop
 			}
-			msleep()
 		}
 	}
 	return len(ep.pendingCmds) == 0
