@@ -163,7 +163,8 @@ func (h *LookoutHandler) scan() {
 	for _, file := range files {
 		//TODO: Do we need to support removal of stale items? yes
 		if uuid, err := uuid.Parse(file.Name()); err == nil {
-			if (h.Epc.MonitorUUID == uuid.String()) || (h.Epc.MonitorUUID == "*") {
+			if (h.Epc.MonitorUUID == "*") ||
+				(h.Epc.MonitorUUID == uuid.String()) {
 				h.tryAdd(uuid)
 			}
 		}
@@ -190,7 +191,7 @@ func (h *LookoutHandler) tryAdd(uuid uuid.UUID) {
 		}
 
 		h.Epc.UpdateEpMap(uuid, &newlns)
-		logrus.Debugf(
+		logrus.Infof(
 			"added: UUID=%s, Path=%s, Alive=%t, NiovaSvcType=%s",
 			newlns.Uuid, newlns.Path, newlns.Alive,
 			newlns.NiovaSvcType)
