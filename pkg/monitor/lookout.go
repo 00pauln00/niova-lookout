@@ -115,7 +115,7 @@ func (h *LookoutHandler) epOutputWatcher() {
 		case event := <-h.EpWatcher.Events:
 
 			if event.Op == fsnotify.Create {
-				h.processInotifyEvent(&event)
+				h.processEvent(&event)
 			}
 
 			// watch for errors
@@ -138,7 +138,7 @@ const (
 	EV_PATHDEPTH_EP_DATA     = 5
 )
 
-func (h *LookoutHandler) processInotifyEvent(event *fsnotify.Event) {
+func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
 
 	tevnam := strings.Split(event.Name, "/") // tokenized event name
 	//	var evtype = EV_TYPE_INVALID
@@ -185,7 +185,7 @@ func (h *LookoutHandler) processInotifyEvent(event *fsnotify.Event) {
 
 		// XXX need to explore this!
 		//h.Epc.HandleHttpQuery(evfile, uuid)
-		h.Epc.ProcessEndpoint(epUuid, cmdUuid)
+		h.Epc.Process(epUuid, cmdUuid)
 
 	case EV_PATHDEPTH_EP_REGISTER:
 		//XXX need to tryAdd the item here?

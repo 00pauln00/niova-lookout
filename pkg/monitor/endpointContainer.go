@@ -70,7 +70,7 @@ func (epc *EPContainer) RefreshEndpoints() {
 // 	}
 // }
 
-func (epc *EPContainer) ProcessEndpoint(epUuid uuid.UUID, cmdUuid uuid.UUID) {
+func (epc *EPContainer) Process(epUuid uuid.UUID, cmdUuid uuid.UUID) {
 
 	if ep := epc.epMap[epUuid]; ep != nil {
 		//		var output []byte
