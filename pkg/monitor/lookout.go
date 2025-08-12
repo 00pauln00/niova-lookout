@@ -10,7 +10,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 //var HttpPort int
@@ -37,7 +37,7 @@ var lookoutState lookout_state = BOOTING
 
 func LookoutWaitUntilReady() {
 	for lookoutState != RUNNING {
-		logrus.Debug("waiting for RUNNING")
+		log.Debug("waiting for RUNNING")
 		time.Sleep(1 * time.Second)
 	}
 }
@@ -54,7 +54,7 @@ func (h *LookoutHandler) monitor() error {
 	if sleepEnv != "" {
 		sleepTime, err = time.ParseDuration(sleepEnv)
 		if err != nil {
-			logrus.Warn("LOOKOUT_SLEEP has invalid contents: defaulting to standard value '20s'\n\t\tSee ParseDuration(): (example: <num-secs>s | <num-ms>ms)")
+			log.Warn("LOOKOUT_SLEEP has invalid contents: defaulting to standard value '20s'\n\t\tSee ParseDuration(): (example: <num-secs>s | <num-ms>ms)")
 		}
 	}
 
@@ -62,13 +62,13 @@ func (h *LookoutHandler) monitor() error {
 		sleepTime = 20 * time.Second
 	}
 
-	logrus.Info("Lookout monitor sleep time: ", sleepTime)
+	log.Info("Lookout monitor sleep time: ", sleepTime)
 
 	for h.run == true {
 		var tmp_stb syscall.Stat_t
 		err = syscall.Stat(h.CTLPath, &tmp_stb)
 		if err != nil {
-			logrus.Errorf("syscall.Stat('%s'): %s", h.CTLPath, err)
+			log.Errorf("syscall.Stat('%s'): %s", h.CTLPath, err)
 			break
 		}
 
@@ -81,7 +81,7 @@ func (h *LookoutHandler) monitor() error {
 
 		// Perform one endpoint scan before entering RUNNING mode
 		if lookoutState == BOOTING {
-			logrus.Debug("enter RUNNING")
+			log.Debug("enter RUNNING")
 			lookoutState = RUNNING
 		}
 
@@ -118,7 +118,7 @@ func (h *LookoutHandler) epOutputWatcher() {
 
 			// watch for errors
 		case err := <-h.EpWatcher.Errors:
-			logrus.Error("EpWatcher pipe: ", err)
+			log.Error("EpWatcher pipe: ", err)
 
 		}
 	}
@@ -129,25 +129,27 @@ func (h *LookoutHandler) processInotifyEvent(event *fsnotify.Event) {
 	cmpstr := splitPath[len(splitPath)-1]
 	uuid, err := uuid.Parse(splitPath[len(splitPath)-3])
 
+	log.Info("here ", event.Name)
+
 	if err != nil {
-		logrus.Error("uuid.Parse(): ", err)
+		log.Error("uuid.Parse(): ", err)
 		return
 	}
 
 	//temp file exclusion
 	if strings.Contains(cmpstr, ".") {
-		logrus.Tracef("Skipping temp file event=%s", event.Name)
+		log.Tracef("Skipping temp file event=%s", event.Name)
 		return
 	}
 
 	//Only include files contain "lookout"
 	if !strings.Contains(cmpstr, "lookout") {
-		logrus.Tracef("Skipping file not containing 'lookout' event=%s",
+		log.Tracef("Skipping file not containing 'lookout' event=%s",
 			event.Name)
 		return
 	}
 
-	logrus.Infof("ev-complete: uuid: %s, event=%s",
+	log.Infof("ev-complete: uuid: %s, event=%s",
 		uuid.String(), event.Name)
 
 	h.Epc.HandleHttpQuery(cmpstr, uuid)
@@ -157,7 +159,7 @@ func (h *LookoutHandler) processInotifyEvent(event *fsnotify.Event) {
 func (h *LookoutHandler) scan() {
 	files, err := ioutil.ReadDir(h.CTLPath)
 	if err != nil {
-		logrus.Fatal(err)
+		log.Fatal(err)
 	}
 
 	for _, file := range files {
@@ -187,11 +189,11 @@ func (h *LookoutHandler) tryAdd(uuid uuid.UUID) {
 		ep.NiovaSvcType = ep.App.GetAppName()
 
 		if err := h.EpWatcher.Add(ep.Path + "/output"); err != nil {
-			logrus.Fatal("Watcher.Add() failed:", err)
+			log.Fatal("Watcher.Add() failed:", err)
 		}
 
 		h.Epc.UpdateEpMap(uuid, &ep)
-		logrus.Infof(
+		log.Infof(
 			"added: UUID=%s, Path=%s, Alive=%t, NiovaSvcType=%s",
 			ep.Uuid, ep.Path, ep.Alive,
 			ep.NiovaSvcType)
@@ -235,18 +237,18 @@ func (h *LookoutHandler) Start() error {
 		return err
 	}
 	//Setup lookout
-	logrus.Info("Initializing Lookout")
+	log.Info("Initializing Lookout")
 	err = h.init()
 	if err != nil {
-		logrus.Debug("Lookout Init - ", err)
+		log.Debug("Lookout Init - ", err)
 		return err
 	}
 
 	//Start monitoring
-	logrus.Info("Starting Monitor")
+	log.Info("Starting Monitor")
 	err = h.monitor()
 	if err != nil {
-		logrus.Debug("Lookout Monitor - ", err)
+		log.Debug("Lookout Monitor - ", err)
 		return err
 	}
 
