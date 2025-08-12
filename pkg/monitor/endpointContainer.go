@@ -35,7 +35,8 @@ func (epc *EPContainer) MarkAlive(serviceUUID string) error {
 	if ok && (service.State == EPstateInit || service.State == EPstateDown) {
 		panic("This code path is broken")
 		service.pendingCmds = make(map[uuid.UUID]*epCommand)
-		service.State = EPstateRunning
+
+		service.ChangeState(EPstateRunning)
 		service.LastReport = time.Now()
 	}
 	return nil
