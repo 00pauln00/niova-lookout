@@ -1,11 +1,11 @@
 package communication
 
 import (
-	"bytes"
-	"encoding/gob"
+	//	"bytes"
+	//	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	//	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,7 +19,7 @@ import (
 	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 
 	"github.com/00pauln00/niova-lookout/pkg/monitor"
-	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
+	//	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
@@ -110,7 +110,7 @@ func (h *CommHandler) HttpHandle(w http.ResponseWriter, r *http.Request) {
 
 func (h *CommHandler) ServeHttp() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/", h.QueryHandle)
+	//	mux.HandleFunc("/v1/", h.QueryHandle)
 
 	//TODO: fix some value not being populated?
 	mux.HandleFunc("/v0/", h.HttpHandle)
@@ -143,46 +143,47 @@ func (h *CommHandler) ServeHttp() error {
 	return nil
 }
 
-func (h *CommHandler) customQuery(node uuid.UUID, query string) []byte {
-	ep := h.Epc.Lookup(node)
-	//If not present
-	if ep == nil {
-		return []byte("Specified App is not present")
-	}
+// func (h *CommHandler) customQuery(node uuid.UUID, query string) []byte {
+// 	ep := h.Epc.Lookup(node)
+// 	//If not present
+// 	if ep == nil {
+// 		return []byte("Specified App is not present")
+// 	}
 
-	httpID := "HTTP_" + uuid.New().String()
-	key := "lookout_" + httpID
-	h.Epc.HttpQuery[key] = make(chan []byte, 2)
-	ep.CtlCustomQuery(query, httpID)
+// 	httpID := "HTTP_" + uuid.New().String()
+// 	key := "lookout_" + httpID
+// 	h.Epc.HttpQuery[key] = make(chan []byte, 2)
+// 	ep.CtlCustomQuery(query, httpID)
 
-	var byteOP []byte
-	select {
-	case byteOP = <-h.Epc.HttpQuery[key]:
-		break
-	}
-	return byteOP
-}
+// 	var byteOP []byte
+// 	select {
+// 	case byteOP = <-h.Epc.HttpQuery[key]:
+// 		break
+// 	}
+// 	return byteOP
+// }
 
-func (h *CommHandler) QueryHandle(w http.ResponseWriter, r *http.Request) {
+// XXX do we need this?
+// func (h *CommHandler) QueryHandle(w http.ResponseWriter, r *http.Request) {
 
-	//Decode the NISD request structure
-	requestBytes, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		logrus.Error("ioutil.ReadAll(r.Body):", err)
-	}
+// 	//Decode the NISD request structure
+// 	requestBytes, err := ioutil.ReadAll(r.Body)
+// 	if err != nil {
+// 		logrus.Error("ioutil.ReadAll(r.Body):", err)
+// 	}
 
-	requestObj := requestResponseLib.LookoutRequest{}
-	dec := gob.NewDecoder(bytes.NewBuffer(requestBytes))
-	err = dec.Decode(&requestObj)
-	if err != nil {
-		logrus.Error("dec.Decode(&requestObj): ", err)
-	}
+// 	requestObj := requestResponseLib.LookoutRequest{}
+// 	dec := gob.NewDecoder(bytes.NewBuffer(requestBytes))
+// 	err = dec.Decode(&requestObj)
+// 	if err != nil {
+// 		logrus.Error("dec.Decode(&requestObj): ", err)
+// 	}
 
-	//Call the appropriate function
-	output := h.customQuery(requestObj.UUID, requestObj.Cmd)
-	//Data to writer
-	w.Write(output)
-}
+// 	//Call the appropriate function
+// 	output := h.customQuery(requestObj.UUID, requestObj.Cmd)
+// 	//Data to writer
+// 	w.Write(output)
+// }
 
 func (h *CommHandler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 	//Take snapshot of the EpMap

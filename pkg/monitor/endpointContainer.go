@@ -2,14 +2,14 @@ package monitor
 
 import (
 	"encoding/json"
-	"strings"
+	//	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
+	//	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 type EPContainer struct {
@@ -33,7 +33,7 @@ func (epc *EPContainer) MarkAlive(serviceUUID string) error {
 	}
 	service, ok := epc.epMap[serviceID]
 	if ok && service.Alive {
-		service.pendingCmds = make(map[string]*epCommand)
+		service.pendingCmds = make(map[uuid.UUID]*epCommand)
 		service.Alive = true
 		service.LastReport = time.Now()
 	}
@@ -46,35 +46,36 @@ func (epc *EPContainer) RefreshEndpoints() {
 		ep.RemoveStaleFiles()
 		err := ep.Detect()
 		if err != nil {
-			logrus.Error(err)
+			log.Error(err)
 		}
 	}
 }
 
-func (epc *EPContainer) HandleHttpQuery(cmpstr string, uuid uuid.UUID) {
-	if strings.Contains(cmpstr, "HTTP") {
-		var output []byte
-		if ep := epc.epMap[uuid]; ep != nil {
-			err := ep.Complete(cmpstr, &output)
-			if err != nil {
-				output = []byte(err.Error())
-			}
-		}
+// func (epc *EPContainer) HandleHttpQuery(cmpstr string, uuid uuid.UUID) {
+// 	if strings.Contains(cmpstr, "HTTP") {
+// 		var output []byte
+// 		if ep := epc.epMap[uuid]; ep != nil {
+// 			err := ep.Complete(cmpstr, &output)
+// 			if err != nil {
+// 				output = []byte(err.Error())
+// 			}
+// 		}
 
-		if channel, ok := epc.HttpQuery[cmpstr]; ok {
-			channel <- output
-		}
-		return
-	}
-}
+// 		if channel, ok := epc.HttpQuery[cmpstr]; ok {
+// 			channel <- output
+// 		}
+// 		return
+// 	}
+// }
 
-func (epc *EPContainer) ProcessEndpoint(cmpstr string, uuid uuid.UUID, event *fsnotify.Event) {
-	if ep := epc.epMap[uuid]; ep != nil {
-		var output []byte
-		err := ep.Complete(cmpstr, &output)
-		if err != nil {
-			logrus.Debug("ProcessEndpoint - ", err, event.Name)
-		}
+func (epc *EPContainer) ProcessEndpoint(epUuid uuid.UUID, cmdUuid uuid.UUID) {
+
+	if ep := epc.epMap[epUuid]; ep != nil {
+		//		var output []byte
+		err := ep.Complete(cmdUuid, nil)
+
+		log.Debugf("ep=%s cmd=%s err=%s",
+			epUuid.String(), cmdUuid.String(), err)
 	}
 }
 

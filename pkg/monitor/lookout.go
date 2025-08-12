@@ -92,7 +92,9 @@ func (h *LookoutHandler) monitor() error {
 }
 
 func (h *LookoutHandler) writePromPath() error {
-	f, err := os.OpenFile(h.PromPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(h.PromPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+		0644)
+
 	if err != nil {
 		return err
 	}
@@ -124,36 +126,70 @@ func (h *LookoutHandler) epOutputWatcher() {
 	}
 }
 
-func (h *LookoutHandler) processInotifyEvent(event *fsnotify.Event) {
-	splitPath := strings.Split(event.Name, "/")
-	cmpstr := splitPath[len(splitPath)-1]
-	uuid, err := uuid.Parse(splitPath[len(splitPath)-3])
+const (
+	EV_TYPE_INVALID     = iota // The event does match known event types
+	EV_TYPE_EP_REGISTER        // New EPs entering the ctl-interface
+	EV_TYPE_EP_DATA            // Existing EPs producing data
+)
 
-	log.Info("here ", event.Name)
+const (
+	EV_PATHDEPTH_UUID        = 3
+	EV_PATHDEPTH_EP_REGISTER = EV_PATHDEPTH_UUID
+	EV_PATHDEPTH_EP_DATA     = 5
+)
+
+func (h *LookoutHandler) processInotifyEvent(event *fsnotify.Event) {
+
+	tevnam := strings.Split(event.Name, "/") // tokenized event name
+	//	var evtype = EV_TYPE_INVALID
+	var pdepth = len(tevnam) - 1
+
+	epUuid, err := uuid.Parse(tevnam[EV_PATHDEPTH_UUID])
+
+	log.Infof("event=%s, splitpath=%s, len=%d uuid-err=%s",
+		event.Name, tevnam, len(tevnam), err)
 
 	if err != nil {
-		log.Error("uuid.Parse(): ", err)
+		log.Error("ep uuid.Parse(): ", err)
 		return
 	}
 
-	//temp file exclusion
-	if strings.Contains(cmpstr, ".") {
-		log.Tracef("Skipping temp file event=%s", event.Name)
-		return
+	// Note that this switch may need to handle 2 items w/ the same depth
+	switch pdepth {
+	case EV_PATHDEPTH_EP_DATA:
+		evfile := tevnam[EV_PATHDEPTH_EP_DATA]
+
+		//temp file exclusion
+		if strings.HasPrefix(evfile, ".") {
+			log.Tracef("skipping ctl-interface temp file: %s",
+				evfile)
+			return
+		}
+
+		//Only include files contain "lookout"
+		if !strings.HasPrefix(evfile, LookoutPrefixStr) {
+			log.Infof(
+				"event %s does not contain prefix string (%s)",
+				evfile, LookoutPrefixStr)
+			return
+		}
+
+		cmdUuid, xerr := uuid.Parse(evfile[len(LookoutPrefixStr):])
+		if xerr != nil {
+			log.Error("cmd uuid.Parse(): ", xerr)
+			return
+		}
+
+		log.Infof("ev-complete: ep-uuid: %s, cmd-uuid=%s",
+			epUuid.String(), cmdUuid.String())
+
+		// XXX need to explore this!
+		//h.Epc.HandleHttpQuery(evfile, uuid)
+		h.Epc.ProcessEndpoint(epUuid, cmdUuid)
+
+	case EV_PATHDEPTH_EP_REGISTER:
+		//XXX need to tryAdd the item here?
 	}
-
-	//Only include files contain "lookout"
-	if !strings.Contains(cmpstr, "lookout") {
-		log.Tracef("Skipping file not containing 'lookout' event=%s",
-			event.Name)
-		return
-	}
-
-	log.Infof("ev-complete: uuid: %s, event=%s",
-		uuid.String(), event.Name)
-
-	h.Epc.HandleHttpQuery(cmpstr, uuid)
-	h.Epc.ProcessEndpoint(cmpstr, uuid, event)
 }
 
 func (h *LookoutHandler) scan() {
@@ -173,26 +209,27 @@ func (h *LookoutHandler) scan() {
 	}
 }
 
-func (h *LookoutHandler) tryAdd(uuid uuid.UUID) {
-	lns := h.Epc.Lookup(uuid)
+func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
+	lns := h.Epc.Lookup(epUuid)
 	if lns == nil {
 		ep := NcsiEP{
-			Uuid:        uuid,
-			Path:        h.CTLPath + "/" + uuid.String(),
+			Uuid:        epUuid,
+			Path:        h.CTLPath + "/" + epUuid.String(),
 			LastReport:  time.Now(),
 			LastClear:   time.Now(),
 			Alive:       true,
-			pendingCmds: make(map[string]*epCommand),
+			pendingCmds: make(map[uuid.UUID]*epCommand),
 		}
+		//XXXX this is all f'd up!
 		ep.IdentifyApplicationType()
-		ep.App.SetUUID(uuid)
+		ep.App.SetUUID(epUuid)
 		ep.NiovaSvcType = ep.App.GetAppName()
 
 		if err := h.EpWatcher.Add(ep.Path + "/output"); err != nil {
 			log.Fatal("Watcher.Add() failed:", err)
 		}
 
-		h.Epc.UpdateEpMap(uuid, &ep)
+		h.Epc.UpdateEpMap(epUuid, &ep)
 		log.Infof(
 			"added: UUID=%s, Path=%s, Alive=%t, NiovaSvcType=%s",
 			ep.Uuid, ep.Path, ep.Alive,
@@ -216,6 +253,13 @@ func (h *LookoutHandler) init() error {
 
 	h.EpWatcher, err = fsnotify.NewWatcher()
 	if err != nil {
+		return err
+	}
+
+	log.Info("fsnotify watch: ", h.CTLPath)
+	err = h.EpWatcher.Add(h.CTLPath)
+	if err != nil {
+		h.EpWatcher.Close()
 		return err
 	}
 
