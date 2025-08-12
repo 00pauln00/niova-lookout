@@ -13,12 +13,11 @@ import (
 	"strings"
 	"time"
 
-	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
+	compress "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
+	serf "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
+	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 
-	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
-
-	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
-
+	"github.com/00pauln00/niova-lookout/pkg/monitor"
 	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
 	"github.com/google/uuid"
@@ -46,7 +45,7 @@ func (h *CommHandler) StartSerfAgent() error {
 		return err
 	}
 
-	h.SerfHandler = serfAgent.SerfAgentHandler{
+	h.SerfHandler = serf.SerfAgentHandler{
 		Name:              h.AgentName,
 		Addr:              h.Addr,
 		ServicePortRangeS: uint16(h.ServicePortRangeS),
@@ -93,7 +92,7 @@ func setLogOutput(logPath string) {
 
 func (h *CommHandler) StartClientAPI() {
 	//Init niovakv client API?
-	h.StorageClient = serviceDiscovery.ServiceDiscoveryHandler{
+	h.StorageClient = sd.ServiceDiscoveryHandler{
 		HTTPRetry: 10,
 		SerfRetry: 5,
 		RaftUUID:  h.RaftUUID,
@@ -217,7 +216,7 @@ func (h *CommHandler) GetTags() {
 				}
 
 				// Decompress UUID key
-				uuidStr, err := compressionLib.DecompressUUID(key)
+				uuidStr, err := compress.DecompressUUID(key)
 				if err != nil {
 					logrus.Error("Failed to decompress UUID key: ", key, " error: ", err)
 					continue
@@ -260,9 +259,9 @@ func (h *CommHandler) GetCompressedGossipData() map[string]string {
 			//Get data from map
 			epUUID := ep.Uuid.String()
 			//Compact the uuid
-			cuuid, _ := compressionLib.CompressUUID(epUUID)
+			cuuid, _ := compress.CompressUUID(epUUID)
 			cstatus := "0"
-			if ep.Alive {
+			if ep.State == monitor.EPstateRunning {
 				cstatus = "1"
 			}
 			//add type

@@ -32,9 +32,10 @@ func (epc *EPContainer) MarkAlive(serviceUUID string) error {
 		return err
 	}
 	service, ok := epc.epMap[serviceID]
-	if ok && service.Alive {
+	if ok && (service.State == EPstateInit || service.State == EPstateDown) {
+		panic("This code path is broken")
 		service.pendingCmds = make(map[uuid.UUID]*epCommand)
-		service.Alive = true
+		service.State = EPstateRunning
 		service.LastReport = time.Now()
 	}
 	return nil

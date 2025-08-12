@@ -14,25 +14,25 @@ import (
 	"sync"
 	"time"
 
-	httpClient "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
-	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
-	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
+	httpc "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
+	serf "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
+	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 
 	"github.com/00pauln00/niova-lookout/pkg/monitor"
 	//	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 type CommHandler struct {
 	Addr          net.IP   //string
 	addrList      []net.IP //[]string
 	RecvdPort     int
-	StorageClient serviceDiscovery.ServiceDiscoveryHandler
+	StorageClient sd.ServiceDiscoveryHandler
 	UdpSocket     net.PacketConn
 	UdpPort       string
 	//serf
-	SerfHandler       serfAgent.SerfAgentHandler
+	SerfHandler       serf.SerfAgentHandler
 	AgentName         string
 	AgentRPCPort      int16
 	GossipNodesPath   string
@@ -69,11 +69,11 @@ type UdpMessage struct {
 func (h *CommHandler) CheckHTTPLiveness() {
 	var emptyByteArray []byte
 	for {
-		_, err := httpClient.HTTP_Request(emptyByteArray, "127.0.0.1:"+strconv.Itoa(int(*h.RetPort))+"/check", false)
+		_, err := httpc.HTTP_Request(emptyByteArray, "127.0.0.1:"+strconv.Itoa(int(*h.RetPort))+"/check", false)
 		if err != nil {
-			logrus.Error("HTTP Liveness - ", err)
+			log.Error("HTTP Liveness - ", err)
 		} else {
-			logrus.Debug("HTTP Liveness - HTTP Server is alive")
+			log.Debug("HTTP Liveness - HTTP Server is alive")
 			break
 		}
 		time.Sleep(1 * time.Second)
@@ -125,7 +125,7 @@ func (h *CommHandler) ServeHttp() error {
 			if strings.Contains(err.Error(), "bind") {
 				continue
 			} else {
-				logrus.Error("Error while starting lookout - ", err)
+				log.Error("Error while starting lookout - ", err)
 				return err
 			}
 		} else {
@@ -134,7 +134,7 @@ func (h *CommHandler) ServeHttp() error {
 				//monitor.LookoutWaitUntilReady()
 
 				*h.RetPort = h.HttpPort
-				logrus.Info("Serving at: ", h.HttpPort)
+				log.Info("Serving at: ", h.HttpPort)
 				http.Serve(l, mux)
 			}()
 		}
@@ -169,14 +169,14 @@ func (h *CommHandler) ServeHttp() error {
 // 	//Decode the NISD request structure
 // 	requestBytes, err := ioutil.ReadAll(r.Body)
 // 	if err != nil {
-// 		logrus.Error("ioutil.ReadAll(r.Body):", err)
+// 		log.Error("ioutil.ReadAll(r.Body):", err)
 // 	}
 
 // 	requestObj := requestResponseLib.LookoutRequest{}
 // 	dec := gob.NewDecoder(bytes.NewBuffer(requestBytes))
 // 	err = dec.Decode(&requestObj)
 // 	if err != nil {
-// 		logrus.Error("dec.Decode(&requestObj): ", err)
+// 		log.Error("dec.Decode(&requestObj): ", err)
 // 	}
 
 // 	//Call the appropriate function
@@ -191,7 +191,7 @@ func (h *CommHandler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 
 	for _, ep := range epMap {
 		// Only report if not dead
-		if ep.Alive {
+		if ep.State == monitor.EPstateRunning {
 			labelMap := make(map[string]string)
 
 			labelMap = ep.App.LoadSystemInfo(labelMap)
@@ -214,7 +214,7 @@ func (h *CommHandler) LookoutsHandler(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 
 	if err != nil {
-		logrus.Error("Error marshaling Lookouts to JSON: ", err)
+		log.Error("Error marshaling Lookouts to JSON: ", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -222,6 +222,6 @@ func (h *CommHandler) LookoutsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, err = w.Write(jsonData)
 	if err != nil {
-		logrus.Error("Error writing /lookouts response: ", err)
+		log.Error("Error writing /lookouts response: ", err)
 	}
 }

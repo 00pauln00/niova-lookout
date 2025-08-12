@@ -217,7 +217,7 @@ func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
 			Path:        h.CTLPath + "/" + epUuid.String(),
 			LastReport:  time.Now(),
 			LastClear:   time.Now(),
-			Alive:       true,
+			State:       EPstateInit,
 			pendingCmds: make(map[uuid.UUID]*epCommand),
 		}
 		//XXXX this is all f'd up!
@@ -231,8 +231,8 @@ func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
 
 		h.Epc.UpdateEpMap(epUuid, &ep)
 		log.Infof(
-			"added: UUID=%s, Path=%s, Alive=%t, NiovaSvcType=%s",
-			ep.Uuid, ep.Path, ep.Alive,
+			"added: UUID=%s, Path=%s, State=%s, NiovaSvcType=%s",
+			ep.Uuid, ep.Path, ep.State.String(),
 			ep.NiovaSvcType)
 	}
 }

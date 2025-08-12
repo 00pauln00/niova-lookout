@@ -30,6 +30,31 @@ const (
 	LookoutPrefixStr  = "lkoep_"
 )
 
+type epstate int
+
+const (
+	EPstateUnknown epstate = iota
+	EPstateInit
+	EPstateRunning
+	EPstateDown
+	EPstateRemoving
+)
+
+func (s epstate) String() string {
+	switch s {
+	case EPstateInit:
+		return "init"
+	case EPstateRunning:
+		return "running"
+	case EPstateDown:
+		return "down"
+	case EPstateRemoving:
+		return "removing"
+	default:
+		return "unknown"
+	}
+}
+
 type NcsiEP struct {
 	App          applications.AppIF       `json:"-"`
 	Uuid         uuid.UUID                `json:"-"`
@@ -40,10 +65,23 @@ type NcsiEP struct {
 	LastReport   time.Time                `json:"-"`
 	LastRequest  time.Time                `json:"-"`
 	LastClear    time.Time                `json:"-"`
-	Alive        bool                     `json:"responsive"`
+	State        epstate                  `json:"state"`
 	EPInfo       applications.CtlIfOut    `json:"ep_info"` //May need to change this to a pointer
 	pendingCmds  map[uuid.UUID]*epCommand `json:"-"`
 	Mutex        sync.Mutex               `json:"-"`
+}
+
+func (ep *NcsiEP) changeState(s epstate) {
+	// pc := make([]uintptr, 10) // at least 1 entry needed
+	// runtime.Callers(2, pc)
+	// f := runtime.FuncForPC(pc[0])
+	// file, line := f.FileLine(pc[0])
+	// fmt.Printf("%s:%d %s\n", file, line, f.Name())
+
+	log.Warn("ep=%s state from %s to %s",
+		ep.Uuid.String(), ep.State.String(), s.String())
+
+	ep.State = s
 }
 
 type epCommand struct {
@@ -155,7 +193,7 @@ func (ep *NcsiEP) mayQueueCmd() bool {
 					log.Info("remove cmd: ", ep.Uuid, x)
 					ep.removeCmd(x)
 				}
-				ep.Alive = false
+				ep.State = EPstateDown
 			}
 		}
 	}
@@ -204,8 +242,9 @@ func (ep *NcsiEP) update(ctlData applications.CtlIfOut) {
 	ep.App.SetCtlIfOut(ctlData)
 	ep.EPInfo = ep.App.GetCtlIfOut()
 	ep.LastReport = time.Now()
-	if !ep.Alive {
-		ep.Alive = true
+
+	if ep.State != EPstateRunning {
+		ep.changeState(EPstateRunning)
 	}
 }
 
@@ -275,19 +314,26 @@ func (ep *NcsiEP) Detect() error {
 	if ep.App == nil {
 		return errors.New("app is nil")
 	}
-	if ep.Alive {
+
+	switch ep.State {
+	case EPstateInit:
+	case EPstateRunning:
 		err = ep.GetAppInfo()
 		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
 			log.Debugf("Endpoint %s timed out\n", ep.Uuid)
-			ep.Alive = false
+			if ep.State == EPstateRunning {
+				ep.changeState(EPstateDown)
+			}
 		}
-	} else {
+	case EPstateDown:
 		//see if app came back up every 60 seconds
 		if time.Since(ep.LastClear) > time.Second*EPtimeoutSec {
 			err = ep.GetAppInfo()
 			ep.LastClear = time.Now()
 		}
+	default:
 	}
+
 	return err
 }
 
