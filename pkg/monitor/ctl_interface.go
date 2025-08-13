@@ -40,6 +40,8 @@ const (
 	EPstateRemoving
 )
 
+var OutfileTtlMinutes = 5 * time.Minute
+
 func (s epstate) String() string {
 	switch s {
 	case EPstateInit:
@@ -291,7 +293,7 @@ func (ep *NcsiEP) removeFiles(folder string) {
 
 	for _, file := range files {
 		if strings.Contains(file.Name(), LookoutPrefixStr) {
-			checkTime := file.ModTime().Local().Add(time.Hour)
+			checkTime := file.ModTime().Local().Add(OutfileTtlMinutes * time.Minute)
 			if time.Now().After(checkTime) {
 				os.Remove(folder + file.Name())
 			}
