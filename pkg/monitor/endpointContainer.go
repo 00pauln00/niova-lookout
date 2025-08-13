@@ -106,9 +106,22 @@ func (epc *EPContainer) UpdateEpMap(uuid uuid.UUID, newlns *NcsiEP) {
 
 func (epc *EPContainer) JsonMarshal() []byte {
 	var jsonData []byte
+
 	epc.mutex.Lock()
-	jsonData, err := json.MarshalIndent(epc.epMap, "", "\t")
+
+	// Exclude
+	filtered := make(map[uuid.UUID]*NcsiEP)
+	for k, v := range epc.epMap {
+		if v.State == EPstateRunning {
+			filtered[k] = v
+		}
+	}
+
 	epc.mutex.Unlock()
+
+	jsonData, err := json.MarshalIndent(filtered, "", "\t")
+
+	filtered = nil
 
 	if err != nil {
 		return nil

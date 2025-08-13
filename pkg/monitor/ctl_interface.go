@@ -195,7 +195,12 @@ func (ep *NcsiEP) mayQueueCmd() bool {
 					log.Info("remove cmd: ", ep.Uuid, x)
 					ep.removeCmd(x)
 				}
-				ep.ChangeState(EPstateDown)
+
+				if ep.State == EPstateInit {
+					ep.ChangeState(EPstateRemoving)
+				} else {
+					ep.ChangeState(EPstateDown)
+				}
 			}
 		}
 	}

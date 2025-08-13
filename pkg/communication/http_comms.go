@@ -81,13 +81,14 @@ func (h *CommHandler) CheckHTTPLiveness() {
 }
 
 func (h *CommHandler) httpHandleRootRequest(w http.ResponseWriter) {
-
-	fmt.Fprintf(w, "httpHandleRootRequest: %s\n", string(h.Epc.JsonMarshal()))
+	fmt.Fprintf(w, "httpHandleRootRequest: %s\n",
+		string(h.Epc.JsonMarshal()))
 }
 
 func (h *CommHandler) httpHandleUUIDRequest(w http.ResponseWriter,
 	uuid uuid.UUID) {
-	fmt.Fprintf(w, "httpHandleUUIDRequest: %s\n", string(h.Epc.JsonMarshalUUID(uuid)))
+	fmt.Fprintf(w, "httpHandleUUIDRequest: %s\n",
+		string(h.Epc.JsonMarshalUUID(uuid)))
 }
 
 func (h *CommHandler) httpHandleRoute(w http.ResponseWriter, r *url.URL) {
