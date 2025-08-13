@@ -66,7 +66,7 @@ type NcsiEP struct {
 	Port         int                      `json:"port"`
 	LastReport   time.Time                `json:"-"`
 	LastRequest  time.Time                `json:"-"`
-	LastClear    time.Time                `json:"-"`
+	LastClear    time.Time                `json:"-"` //XXX remove me
 	State        epstate                  `json:"state"`
 	EPInfo       applications.CtlIfOut    `json:"ep_info"` //May need to change this to a pointer
 	pendingCmds  map[uuid.UUID]*epCommand `json:"-"`
@@ -320,7 +320,7 @@ func (ep *NcsiEP) Detect() error {
 	switch ep.State {
 	case EPstateInit:
 	case EPstateRunning:
-		err = ep.GetAppInfo()
+		err = ep.queryApp()
 		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
 			log.Debugf("Endpoint %s timed out\n", ep.Uuid)
 			if ep.State == EPstateRunning {
@@ -330,7 +330,7 @@ func (ep *NcsiEP) Detect() error {
 	case EPstateDown:
 		//see if app came back up every 60 seconds
 		if time.Since(ep.LastClear) > time.Second*EPtimeoutSec {
-			err = ep.GetAppInfo()
+			err = ep.queryApp()
 			ep.LastClear = time.Now()
 		}
 	default:
@@ -339,7 +339,7 @@ func (ep *NcsiEP) Detect() error {
 	return err
 }
 
-func (ep *NcsiEP) GetAppInfo() error {
+func (ep *NcsiEP) queryApp() error {
 	var err error
 	cmdStr, op := ep.App.GetAppDetectInfo(false)
 	cmd := epCommand{ep: ep, cmd: cmdStr, op: op}
