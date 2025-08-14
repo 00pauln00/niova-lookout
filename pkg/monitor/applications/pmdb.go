@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 
 	"github.com/00pauln00/niova-lookout/pkg/prometheusHandler"
 	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
-	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 type Pmdb struct {
@@ -104,7 +105,7 @@ func (p *Pmdb) GetAppName() string {
 
 func (p *Pmdb) SetCtlIfOut(c CtlIfOut) {
 	p.EPInfo.RaftRootEntry = c.RaftRootEntry
-	logrus.Debugf("update-raft %+v \n", c.RaftRootEntry)
+	xlog.Debugf("update-raft %+v \n", c.RaftRootEntry)
 }
 
 func (p *Pmdb) GetCtlIfOut() CtlIfOut {

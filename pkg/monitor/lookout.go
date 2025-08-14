@@ -10,7 +10,8 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
+
+	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 //var HttpPort int
@@ -33,11 +34,12 @@ const (
 	SHUTDOWN
 )
 
+// XXX move to LookoutHandler?
 var lookoutState lookout_state = BOOTING
 
 func LookoutWaitUntilReady() {
 	for lookoutState != RUNNING {
-		log.Debug("waiting for RUNNING")
+		xlog.Debug("waiting for RUNNING")
 		time.Sleep(1 * time.Second)
 	}
 }
@@ -54,7 +56,7 @@ func (h *LookoutHandler) monitor() error {
 	if sleepEnv != "" {
 		sleepTime, err = time.ParseDuration(sleepEnv)
 		if err != nil {
-			log.Warn("LOOKOUT_SLEEP has invalid contents: defaulting to standard value '20s'\n\t\tSee ParseDuration(): (example: <num-secs>s | <num-ms>ms)")
+			xlog.Warn("LOOKOUT_SLEEP has invalid contents: defaulting to standard value '20s'\n\t\tSee ParseDuration(): (example: <num-secs>s | <num-ms>ms)")
 		}
 	}
 
@@ -62,26 +64,14 @@ func (h *LookoutHandler) monitor() error {
 		sleepTime = 20 * time.Second
 	}
 
-	log.Info("Lookout monitor sleep time: ", sleepTime)
+	xlog.Info("Lookout monitor sleep time: ", sleepTime)
 
 	for h.run == true {
-		var tmp_stb syscall.Stat_t
-		err = syscall.Stat(h.CTLPath, &tmp_stb)
-		if err != nil {
-			log.Errorf("syscall.Stat('%s'): %s", h.CTLPath, err)
-			break
-		}
+		h.Epc.PollEPs()
 
-		if tmp_stb.Mtim != h.Statb.Mtim {
-			h.Statb = tmp_stb
-			h.scan()
-		}
-
-		h.Epc.RefreshEndpoints()
-
-		// Perform one endpoint scan before entering RUNNING mode
+		// Perform one endpoint poll before entering RUNNING mode
 		if lookoutState == BOOTING {
-			log.Debug("enter RUNNING")
+			xlog.Debug("enter RUNNING")
 			lookoutState = RUNNING
 		}
 
@@ -120,7 +110,7 @@ func (h *LookoutHandler) epOutputWatcher() {
 
 			// watch for errors
 		case err := <-h.EpWatcher.Errors:
-			log.Error("EpWatcher pipe: ", err)
+			xlog.Error("EpWatcher pipe: ", err)
 
 		}
 	}
@@ -146,11 +136,11 @@ func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
 
 	epUuid, err := uuid.Parse(tevnam[EV_PATHDEPTH_UUID])
 
-	log.Infof("event=%s, splitpath=%s, len=%d uuid-err=%s",
+	xlog.Infof("event=%s, splitpath=%s, len=%d uuid-err=%s",
 		event.Name, tevnam, len(tevnam), err)
 
 	if err != nil {
-		log.Error("ep uuid.Parse(): ", err)
+		xlog.Error("ep uuid.Parse(): ", err)
 		return
 	}
 
@@ -161,14 +151,14 @@ func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
 
 		//temp file exclusion
 		if strings.HasPrefix(evfile, ".") {
-			log.Tracef("skipping ctl-interface temp file: %s",
+			xlog.Tracef("skipping ctl-interface temp file: %s",
 				evfile)
 			return
 		}
 
 		//Only include files contain "lookout"
 		if !strings.HasPrefix(evfile, LookoutPrefixStr) {
-			log.Infof(
+			xlog.Infof(
 				"event %s does not contain prefix string (%s)",
 				evfile, LookoutPrefixStr)
 			return
@@ -176,11 +166,11 @@ func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
 
 		cmdUuid, xerr := uuid.Parse(evfile[len(LookoutPrefixStr):])
 		if xerr != nil {
-			log.Error("cmd uuid.Parse(): ", xerr)
+			xlog.Error("cmd uuid.Parse(): ", xerr)
 			return
 		}
 
-		log.Infof("ev-complete: ep-uuid: %s, cmd-uuid=%s",
+		xlog.Infof("ev-complete: ep-uuid: %s, cmd-uuid=%s",
 			epUuid.String(), cmdUuid.String())
 
 		// XXX need to explore this!
@@ -188,18 +178,22 @@ func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
 		h.Epc.Process(epUuid, cmdUuid)
 
 	case EV_PATHDEPTH_EP_REGISTER:
-		//XXX need to tryAdd the item here?
+		h.tryAdd(epUuid)
 	}
 }
 
 func (h *LookoutHandler) scan() {
+
+	if lookoutState != BOOTING {
+		panic("scan() only allowed during bootup")
+	}
+
 	files, err := ioutil.ReadDir(h.CTLPath)
 	if err != nil {
-		log.Fatal(err)
+		xlog.Fatal("ioutil.ReadDir():", err)
 	}
 
 	for _, file := range files {
-		//TODO: Do we need to support removal of stale items? yes
 		if uuid, err := uuid.Parse(file.Name()); err == nil {
 			if (h.Epc.MonitorUUID == "*") ||
 				(h.Epc.MonitorUUID == uuid.String()) {
@@ -210,31 +204,51 @@ func (h *LookoutHandler) scan() {
 }
 
 func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
-	lns := h.Epc.Lookup(epUuid)
-	if lns == nil {
-		ep := NcsiEP{
-			Uuid:        epUuid,
-			Path:        h.CTLPath + "/" + epUuid.String(),
-			LastReport:  time.Now(),
-			LastClear:   time.Now(),
-			State:       EPstateInit,
-			pendingCmds: make(map[uuid.UUID]*epCommand),
-		}
-		//XXXX this is all f'd up!
-		ep.IdentifyApplicationType()
-		ep.App.SetUUID(epUuid)
-		ep.NiovaSvcType = ep.App.GetAppName()
+	x := h.Epc.Lookup(epUuid)
 
-		if err := h.EpWatcher.Add(ep.Path + "/output"); err != nil {
-			log.Fatal("Watcher.Add() failed:", err)
-		}
-
-		h.Epc.UpdateEpMap(epUuid, &ep)
-		log.Infof(
-			"added: UUID=%s, Path=%s, State=%s, NiovaSvcType=%s",
-			ep.Uuid, ep.Path, ep.State.String(),
-			ep.NiovaSvcType)
+	if x != nil {
+		xlog.Infof("ep=%s (state=%s) already exists",
+			epUuid.String(), x.State.String())
+		return
 	}
+
+	path := h.CTLPath + "/" + epUuid.String()
+
+	// Ensure the member is directory before proceeding
+	stat, xerr := os.Lstat(path)
+	if xerr != nil {
+		xlog.Infof("lstat(%s) failed: %s", path, xerr)
+		return
+	}
+	if !stat.IsDir() {
+		xlog.Infof("Path %s is not a directory", path)
+		return
+	}
+
+	// Create new object
+	ep := NcsiEP{
+		Uuid:        epUuid,
+		Path:        path,
+		LastReport:  time.Now(),
+		LastClear:   time.Now(), //XXx remove me!
+		State:       EPstateInit,
+		pendingCmds: make(map[uuid.UUID]*epCommand),
+	}
+
+	//XXXX this is all f'd up!
+	//	ep.IdentifyApplicationType()
+	//	ep.App.SetUUID(epUuid)
+	//	ep.NiovaSvcType = ep.App.GetAppName()
+
+	if err := h.EpWatcher.Add(ep.Path + "/output"); err != nil {
+		xlog.Fatal("Watcher.Add() failed:", err)
+	}
+
+	h.Epc.UpdateEpMap(epUuid, &ep)
+	//	xlog.Infof("added: UUID=%s, Path=%s, State=%s, NiovaSvcType=%s",
+	//		ep.Uuid, ep.Path, ep.State.String(), ep.NiovaSvcType)
+
+	xlog.Infof("UUID=%s, State=%s", ep.Uuid.String(), ep.State.String())
 }
 
 func (h *LookoutHandler) init() error {
@@ -256,7 +270,7 @@ func (h *LookoutHandler) init() error {
 		return err
 	}
 
-	log.Info("fsnotify watch: ", h.CTLPath)
+	xlog.Info("fsnotify watch: ", h.CTLPath)
 	err = h.EpWatcher.Add(h.CTLPath)
 	if err != nil {
 		h.EpWatcher.Close()
@@ -281,18 +295,18 @@ func (h *LookoutHandler) Start() error {
 		return err
 	}
 	//Setup lookout
-	log.Info("Initializing Lookout")
+	xlog.Info("Initializing Lookout")
 	err = h.init()
 	if err != nil {
-		log.Debug("Lookout Init - ", err)
+		xlog.Debug("Lookout Init - ", err)
 		return err
 	}
 
 	//Start monitoring
-	log.Info("Starting Monitor")
+	xlog.Info("Starting Monitor")
 	err = h.monitor()
 	if err != nil {
-		log.Debug("Lookout Monitor - ", err)
+		xlog.Debug("Lookout Monitor - ", err)
 		return err
 	}
 

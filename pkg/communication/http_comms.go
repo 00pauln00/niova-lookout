@@ -14,14 +14,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	httpc "github.com/00pauln00/niova-pumicedb/go/pkg/utils/httpclient"
 	serf "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 
 	"github.com/00pauln00/niova-lookout/pkg/monitor"
-	//	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
-	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
+	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 type CommHandler struct {
@@ -71,9 +71,9 @@ func (h *CommHandler) CheckHTTPLiveness() {
 	for {
 		_, err := httpc.HTTP_Request(emptyByteArray, "127.0.0.1:"+strconv.Itoa(int(*h.RetPort))+"/check", false)
 		if err != nil {
-			log.Error("HTTP Liveness - ", err)
+			xlog.Error("HTTP Liveness - ", err)
 		} else {
-			log.Debug("HTTP Liveness - HTTP Server is alive")
+			xlog.Debug("HTTP Liveness - HTTP Server is alive")
 			break
 		}
 		time.Sleep(1 * time.Second)
@@ -126,7 +126,7 @@ func (h *CommHandler) ServeHttp() error {
 			if strings.Contains(err.Error(), "bind") {
 				continue
 			} else {
-				log.Error("Error while starting lookout - ", err)
+				xlog.Error("Error while starting lookout - ", err)
 				return err
 			}
 		} else {
@@ -135,7 +135,7 @@ func (h *CommHandler) ServeHttp() error {
 				//monitor.LookoutWaitUntilReady()
 
 				*h.RetPort = h.HttpPort
-				log.Info("Serving at: ", h.HttpPort)
+				xlog.Info("Serving at: ", h.HttpPort)
 				http.Serve(l, mux)
 			}()
 		}
@@ -170,14 +170,14 @@ func (h *CommHandler) ServeHttp() error {
 // 	//Decode the NISD request structure
 // 	requestBytes, err := ioutil.ReadAll(r.Body)
 // 	if err != nil {
-// 		log.Error("ioutil.ReadAll(r.Body):", err)
+// 		xlog.Error("ioutil.ReadAll(r.Body):", err)
 // 	}
 
 // 	requestObj := requestResponseLib.LookoutRequest{}
 // 	dec := gob.NewDecoder(bytes.NewBuffer(requestBytes))
 // 	err = dec.Decode(&requestObj)
 // 	if err != nil {
-// 		log.Error("dec.Decode(&requestObj): ", err)
+// 		xlog.Error("dec.Decode(&requestObj): ", err)
 // 	}
 
 // 	//Call the appropriate function
@@ -215,7 +215,7 @@ func (h *CommHandler) LookoutsHandler(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 
 	if err != nil {
-		log.Error("Error marshaling Lookouts to JSON: ", err)
+		xlog.Error("Error marshaling Lookouts to JSON: ", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -223,6 +223,6 @@ func (h *CommHandler) LookoutsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, err = w.Write(jsonData)
 	if err != nil {
-		log.Error("Error writing /lookouts response: ", err)
+		xlog.Error("Error writing /lookouts response: ", err)
 	}
 }

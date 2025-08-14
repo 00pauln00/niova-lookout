@@ -10,10 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
+
+	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
+	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 // #include <unistd.h>
@@ -80,7 +81,7 @@ func (ep *NcsiEP) ChangeState(s epstate) {
 	// file, line := f.FileLine(pc[0])
 	// fmt.Printf("%s:%d %s\n", file, line, f.Name())
 
-	log.Warn("ep=%s state from %s to %s",
+	xlog.Warnf("ep=%s state from %s to %s",
 		ep.Uuid.String(), ep.State.String(), s.String())
 
 	ep.State = s
@@ -132,7 +133,7 @@ func (c *epCommand) loadOutfile() {
 	// Try to read the file
 	c.outJSON, c.err = ioutil.ReadFile(c.getOutFnam())
 	if c.err != nil {
-		log.Errorf("checkOutFile(): %s getOutFnam %s",
+		xlog.Errorf("checkOutFile(): %s getOutFnam %s",
 			c.err, c.getOutFnam())
 	}
 	return
@@ -141,7 +142,7 @@ func (c *epCommand) loadOutfile() {
 // Makes a 'unique' filename for the command and adds it to the map
 func (c *epCommand) prep() {
 	c.id = uuid.New()
-	c.cmd = c.cmd + "\nOUTFILE /" + c.id.String() + "\n"
+	c.cmd = c.cmd + "\nOUTFILE /" + LookoutPrefixStr + c.id.String() + "\n"
 
 	// Add the c into the endpoint's pending epc map
 	c.ep.addCmd(c)
@@ -150,25 +151,24 @@ func (c *epCommand) prep() {
 func (c *epCommand) write() {
 	c.err = ioutil.WriteFile(c.getInFnam(), c.getCmdBuf(), 0644)
 	if c.err != nil {
-		log.Errorf("ioutil.WriteFile(): %s", c.err)
+		xlog.Errorf("ioutil.WriteFile(): %s", c.err)
 		return
 	}
 	c.ep.LastRequest = time.Now()
 
-	if log.IsLevelEnabled(log.DebugLevel) {
-		log.Debugf("ev-submit: uuid=%s %s: %s",
+	if xlog.IsLevelEnabled(xlog.DEBUG) {
+		xlog.Debugf("ev-submit: uuid=%s %s: %s",
 			c.ep.Uuid, c.getInFnam(), c.cmd)
 
-	} else if log.IsLevelEnabled(log.InfoLevel) {
-		log.Infof("ev-submit: uuid=%s %s",
+	} else if xlog.IsLevelEnabled(xlog.INFO) {
+		xlog.Infof("ev-submit: uuid=%s %s",
 			c.ep.Uuid, c.getInFnam())
 	}
 }
 
 func (c *epCommand) submit() {
 	if err := c.ep.mayQueueCmd(); err == false {
-		log.Error("Too many pending commands for endpoint: ",
-			c.ep.Uuid)
+		xlog.Info("Too many pending commands for endpoint: ", c.ep.Uuid)
 		return
 	}
 	c.prep()
@@ -176,23 +176,23 @@ func (c *epCommand) submit() {
 }
 
 func (ep *NcsiEP) mayQueueCmd() bool {
-	log.Debugf("uuid=%s pending=%d max=%d",
+	xlog.Debugf("uuid=%s pending=%d max=%d",
 		ep.Uuid, len(ep.pendingCmds), maxPendingCmdsEP)
 
 	// Enforces a max queue depth of 1 for internal scheduling logic,
 	// while still allowing externally-triggered commands (e.g., via /v1/)
 	// to be processed.
 	if len(ep.pendingCmds) > 0 {
-		log.Debugf("ep %s has %d pending cmds",
+		xlog.Debugf("ep %s has %d pending cmds",
 			ep.Uuid, len(ep.pendingCmds))
 
 		if len(ep.pendingCmds) > 0 {
 			if time.Since(ep.LastRequest) > time.Second*EPtimeoutSec {
-				log.Debugf("ep %s has stale cmds (%f seconds), removing them from the queue",
+				xlog.Debugf("ep %s has stale cmds (%f seconds), removing them from the queue",
 					ep.Uuid, EPtimeoutSec)
 
 				for x := range ep.pendingCmds {
-					log.Info("remove cmd: ", ep.Uuid, x)
+					xlog.Info("remove cmd: ", ep.Uuid, x)
 					ep.removeCmd(x)
 				}
 
@@ -239,7 +239,7 @@ func (ep *NcsiEP) epRoot() string {
 }
 
 // func (ep *NcsiEP) CtlCustomQuery(customCMD string, ID string) error {
-// 	log.Infof("Custom query for endpoint %s: %s", ep.Uuid, customCMD)
+// 	xlog.Infof("Custom query for endpoint %s: %s", ep.Uuid, customCMD)
 // 	cmd := epCommand{ep: ep, cmd: customCMD, op: applications.CustomOp, fn: ID}
 // 	cmd.submit()
 // 	return cmd.err
@@ -266,26 +266,43 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 		return c.err
 	}
 
-	//Add here to break for custom command
-	if c.op == applications.CustomOp {
-		log.Debug("Custom command identified: ", cmdUuid.String())
+	var err error
+
+	switch c.op {
+	case applications.SystemInfoOp:
+		var err error
+		var ctlifout applications.CtlIfOut
+		if err = json.Unmarshal(c.getOutJSON(), &ctlifout); err != nil {
+			if ute, ok := err.(*json.UnmarshalTypeError); ok {
+				xlog.Errorf("UnmarshalTypeError %v - %v - %v\n",
+					ute.Value, ute.Type, ute.Offset)
+			} else {
+				xlog.Errorf("Other error: %s\n", err)
+				xlog.Errorf("Contents: %s\n", string(c.getOutJSON()))
+			}
+			return err
+		}
+		ep.update(ctlifout)
+
+	case applications.CustomOp:
+		//Add here to break for custom command
+		xlog.Debug("Custom command identified: ",
+			cmdUuid.String())
 		*output = c.getOutJSON()
 		return nil
-	}
 
-	var err error
-	var ctlifout applications.CtlIfOut
-	if err = json.Unmarshal(c.getOutJSON(), &ctlifout); err != nil {
-		if ute, ok := err.(*json.UnmarshalTypeError); ok {
-			log.Errorf("UnmarshalTypeError %v - %v - %v\n",
-				ute.Value, ute.Type, ute.Offset)
-		} else {
-			log.Errorf("Other error: %s\n", err)
-			log.Errorf("Contents: %s\n", string(c.getOutJSON()))
+	case applications.IdentifyOp:
+		ep.App, err = applications.DetermineApp(c.getOutJSON())
+		if err != nil {
+			xlog.Error("DetermineApp for ", ep.Uuid, " failed:", err)
 		}
-		return err
+		xlog.Info("App type for ", ep.Uuid, " determined: ",
+			ep.App.GetAppName())
+
+		ep.ChangeState(EPstateRunning)
+
+	default:
 	}
-	ep.update(ctlifout)
 
 	return nil
 }
@@ -318,16 +335,26 @@ func (ep *NcsiEP) RemoveStaleFiles() {
 // Called every sleep time (default 20 seconds) to check if the endpoint is alive
 func (ep *NcsiEP) Detect() error {
 	var err error
-	if ep.App == nil {
-		return errors.New("app is nil")
-	}
 
 	switch ep.State {
 	case EPstateInit:
+		xlog.Info("try to determine app type for: ", ep.Uuid)
+		c := epCommand{
+			ep:  ep,
+			cmd: "GET /.*",
+			op:  applications.IdentifyOp,
+			id:  uuid.New(),
+		}
+		c.submit()
+
 	case EPstateRunning:
+		if ep.App == nil {
+			return errors.New("Running ep has nil app")
+		}
+
 		err = ep.queryApp()
 		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
-			log.Debugf("Endpoint %s timed out\n", ep.Uuid)
+			xlog.Debugf("Endpoint %s timed out\n", ep.Uuid)
 			if ep.State == EPstateRunning {
 				ep.ChangeState(EPstateDown)
 			}
@@ -360,7 +387,7 @@ func (ep *NcsiEP) queryApp() error {
 }
 
 func (ep *NcsiEP) IdentifyApplicationType() {
-	log.Info("GetAppType for: ", ep.Uuid)
+	xlog.Info("GetAppType for: ", ep.Uuid)
 
 	c := epCommand{
 		ep:  ep,
@@ -371,7 +398,7 @@ func (ep *NcsiEP) IdentifyApplicationType() {
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Fatal("Failed to create watcher:", err)
+		xlog.Fatal("Failed to create watcher:", err)
 	}
 	defer watcher.Close()
 
@@ -379,9 +406,9 @@ func (ep *NcsiEP) IdentifyApplicationType() {
 	err = watcher.Add(outputDir)
 	if err != nil {
 		if errors.Is(err, syscall.ENOSPC) {
-			log.Error("Failed to add directory to watcher due to no space left on device:", err)
+			xlog.Error("Failed to add directory to watcher due to no space left on device:", err)
 		} else {
-			log.Fatal("Failed to add directory to watcher:", err)
+			xlog.Fatal("Failed to add directory to watcher:", err)
 		}
 	}
 
@@ -391,21 +418,21 @@ func (ep *NcsiEP) IdentifyApplicationType() {
 			select {
 			case event, ok := <-watcher.Events:
 				if !ok {
-					log.Trace("Watcher.Events closed")
+					xlog.Trace("Watcher.Events closed")
 					return
 				}
-				log.Debug("Event received:", event)
+				xlog.Debug("Event received:", event)
 				if (event.Op&fsnotify.Write == fsnotify.Write ||
 					event.Op&fsnotify.Create == fsnotify.Create) && event.Name == outputDir+"/"+c.id.String() {
-					log.Trace("File modified:", event.Name)
+					xlog.Trace("File modified:", event.Name)
 					done <- true
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {
-					log.Info("Watcher.Errors closed")
+					xlog.Info("Watcher.Errors closed")
 					return
 				}
-				log.Error("Watcher error:", err)
+				xlog.Error("Watcher error:", err)
 			}
 		}
 	}()
@@ -414,14 +441,14 @@ func (ep *NcsiEP) IdentifyApplicationType() {
 
 	select {
 	case <-done:
-		log.Debug("File write detected")
+		xlog.Debug("File write detected")
 	case <-time.After(1 * time.Second): // Timeout after 1 seconds
-		log.Warn("Timeout waiting for file write")
+		xlog.Warn("Timeout waiting for file write")
 	}
 
 	remove := ep.removeCmd(c.id)
 	if remove == nil {
-		log.Error("removeCmd returned nil")
+		xlog.Error("removeCmd returned nil")
 		return
 	}
 
@@ -429,7 +456,7 @@ func (ep *NcsiEP) IdentifyApplicationType() {
 	output := remove.getOutJSON()
 	ep.App, err = applications.DetermineApp(output)
 	if err != nil {
-		log.Error("DetermineApp for ", ep.Uuid, " failed:", err)
+		xlog.Error("DetermineApp for ", ep.Uuid, " failed:", err)
 	}
-	log.Info("App type for ", ep.Uuid, " determined: ", ep.App.GetAppName())
+	xlog.Info("App type for ", ep.Uuid, " determined: ", ep.App.GetAppName())
 }

@@ -6,9 +6,10 @@ import (
 	"strconv"
 	"unsafe"
 
-	"github.com/00pauln00/niova-lookout/pkg/prometheusHandler"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+
+	"github.com/00pauln00/niova-lookout/pkg/prometheusHandler"
+	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 // #include <unistd.h>
@@ -165,7 +166,7 @@ func (n *Nisd) LoadNISDLabelMap(labelMap map[string]string) map[string]string {
 func (n *Nisd) LoadSystemInfo(labelMap map[string]string) map[string]string {
 
 	if n.EPInfo.SysInfo == nil {
-		logrus.Warnf("NISD %s is not ready", n.GetUUID().String())
+		xlog.Warnf("NISD %s is not ready", n.GetUUID().String())
 		return nil
 	}
 
@@ -224,7 +225,7 @@ func (n *Nisd) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.
 	labelMap["TYPE"] = n.GetAppName()
 
 	// print out node info for debugging
-	logrus.Trace("NISD UUID: ", n.GetUUID())
+	xlog.Trace("NISD UUID: ", n.GetUUID())
 
 	// Load labelMap with NISD data if present
 	if condition := len(n.EPInfo.NISDRootEntry) == 0; !condition {

@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path"
-	"runtime"
+
+	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 
 	"github.com/00pauln00/niova-lookout/pkg/communication"
 	"github.com/00pauln00/niova-lookout/pkg/monitor"
-	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 var RecvdPort int
@@ -38,57 +38,51 @@ func (handler *handler) parseCMDArgs() {
 		lookoutLogger string
 	)
 
-	handler.ctlPath = flag.String("dir", "/tmp/.niova", "endpoint directory root")
+	handler.ctlPath = flag.String("dir",
+		"/tmp/.niova", "endpoint directory root")
+
 	showHelpShort = flag.Bool("h", false, "")
 	showHelp = flag.Bool("help", false, "print help")
-	logLevel = flag.String("log", "info", "set log level (panic, fatal, error, warn, info, debug, trace)")
 
-	flag.BoolVar(&handler.standalone, "std", false, "Set flag to true to run lookout standalone for NISD")
-	flag.BoolVar(&handler.pmdb, "pmdb", false, "Set flag to true to run lookout with pmdb")
-	flag.StringVar(&handler.coms.UdpPort, "u", "1054", "UDP port for NISD communication")
-	flag.IntVar(&handler.httpPort, "hp", 6666, "HTTP port for communication")
-	flag.StringVar(&handler.PortRangeStr, "p", "", "Port range for the lookout to export data endpoints to, should be space seperated")
-	flag.StringVar(&handler.coms.AgentName, "n", uuid.New().String(), "Agent name")
+	logLevel = flag.String("log", "info",
+		"set log level (panic, fatal, error, warn, info, debug, trace)")
+
+	flag.BoolVar(&handler.standalone, "std", false,
+		"Set flag to true to run lookout standalone for NISD")
+
+	flag.BoolVar(&handler.pmdb, "pmdb", false,
+		"Set flag to true to run lookout with pmdb")
+
+	flag.StringVar(&handler.coms.UdpPort, "u",
+		"1054", "UDP port for NISD communication")
+
+	flag.IntVar(&handler.httpPort, "hp", 6666,
+		"HTTP port for communication")
+
+	flag.StringVar(&handler.PortRangeStr, "p", "",
+		"Port range for the lookout to export data endpoints to, should be space seperated")
+
+	flag.StringVar(&handler.coms.AgentName, "n", uuid.New().String(),
+		"Agent name")
+
 	flag.StringVar(&agentAddr, "a", "127.0.0.1", "Agent addr")
-	flag.StringVar(&handler.coms.GossipNodesPath, "c", "./gossipNodes", "Gossip Node File Path")
-	flag.StringVar(&handler.promPath, "pr", "./targets.json", "Prometheus targets info")
+	flag.StringVar(&handler.coms.GossipNodesPath, "c",
+		"./gossipNodes", "Gossip Node File Path")
+
+	flag.StringVar(&handler.promPath, "pr", "./targets.json",
+		"Prometheus targets info")
+
 	flag.StringVar(&handler.coms.SerfLogger, "s", "serf.log", "Serf logs")
 	flag.StringVar(&lookoutLogger, "l", "", "Lookout logs")
 	flag.StringVar(&handler.coms.RaftUUID, "r", "", "Raft UUID")
-	flag.StringVar(&handler.coms.LookoutUUID, "lu", uuid.NewString(), "Lookout UUID")
+	flag.StringVar(&handler.coms.LookoutUUID, "lu", uuid.NewString(),
+		"Lookout UUID")
 	flag.Parse()
 
-	if lookoutLogger != "" {
-		file, err := os.OpenFile(lookoutLogger,
-			os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
-
-		if err != nil {
-			logrus.Fatalf("Error opening lookout log file: %v", err)
-		}
-		logrus.SetOutput(file)
-	}
-
-	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp: true,
-		CallerPrettyfier: func(f *runtime.Frame) (string, string) {
-			// file:line format
-			filename := path.Base(f.File)
-			funcName := path.Base(f.Function)
-			return funcName, fmt.Sprintf("%s:%d", filename, f.Line)
-		},
-	})
-
-	logrus.SetReportCaller(true)
+	xlog.InitXlog(lookoutLogger, logLevel)
 
 	// Convert agentAddr string to net.IP after parsing
 	handler.coms.Addr = net.ParseIP(agentAddr)
-
-	level, err := logrus.ParseLevel(*logLevel)
-	if err != nil {
-		logrus.Fatalf("Invalid log level: %v", err)
-	}
-
-	logrus.SetLevel(level)
 
 	nonParsed := flag.Args()
 	if len(nonParsed) > 0 {
@@ -102,8 +96,17 @@ func (handler *handler) parseCMDArgs() {
 }
 
 func usage(rc int) {
-	logrus.Infof("Usage: [OPTIONS] %s\n", os.Args[0])
+	x := os.Stderr
+
+	if rc == 0 {
+		x = os.Stdout
+	}
+
+	fmt.Fprintf(x, "Usage: [OPTIONS] %s\n", os.Args[0])
+
+	flag.CommandLine.SetOutput(x)
 	flag.PrintDefaults()
+
 	os.Exit(rc)
 }
 
@@ -112,11 +115,11 @@ func main() {
 	var portAddr *int
 	var err error
 
-	//Initialize communication handler
-	handler.coms = communication.CommHandler{}
-
 	//Get cmd line args
 	handler.parseCMDArgs()
+
+	//Initialize communication handler
+	handler.coms = communication.CommHandler{}
 
 	if handler.coms.GossipNodesPath != "" {
 		err = handler.coms.LoadConfigInfo()

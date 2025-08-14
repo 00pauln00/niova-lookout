@@ -9,7 +9,8 @@ import (
 
 	//	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
+
+	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 type EPContainer struct {
@@ -31,24 +32,27 @@ func (epc *EPContainer) MarkAlive(serviceUUID string) error {
 	if err != nil {
 		return err
 	}
-	service, ok := epc.epMap[serviceID]
-	if ok && (service.State == EPstateInit || service.State == EPstateDown) {
+	svc, ok := epc.epMap[serviceID]
+	if ok && (svc.State == EPstateInit || svc.State == EPstateDown) {
 		panic("This code path is broken")
-		service.pendingCmds = make(map[uuid.UUID]*epCommand)
+		svc.pendingCmds = make(map[uuid.UUID]*epCommand)
 
-		service.ChangeState(EPstateRunning)
-		service.LastReport = time.Now()
+		svc.ChangeState(EPstateRunning)
+		svc.LastReport = time.Now()
 	}
 	return nil
 }
 
-func (epc *EPContainer) RefreshEndpoints() {
+// XXX this should not just blast through them, it should try to use the entire
+// timeout period
+func (epc *EPContainer) PollEPs() {
 	for _, ep := range epc.epMap {
 		// only check liveness for local EPs
 		ep.RemoveStaleFiles()
+
 		err := ep.Detect()
 		if err != nil {
-			log.Error(err)
+			xlog.Error("ep.Detect(): ", err)
 		}
 	}
 }
@@ -76,8 +80,13 @@ func (epc *EPContainer) Process(epUuid uuid.UUID, cmdUuid uuid.UUID) {
 		//		var output []byte
 		err := ep.Complete(cmdUuid, nil)
 
-		log.Debugf("ep=%s cmd=%s err=%s",
-			epUuid.String(), cmdUuid.String(), err)
+		if err == nil {
+			xlog.Debugf("ep=%s cmd=%s XXX",
+				epUuid.String(), cmdUuid.String())
+		} else {
+			xlog.Warnf("ep=%s cmd=%s err=%s YYY",
+				epUuid.String(), cmdUuid.String(), err)
+		}
 	}
 }
 
@@ -109,17 +118,18 @@ func (epc *EPContainer) JsonMarshal() []byte {
 
 	epc.mutex.Lock()
 
-	// Exclude
+	// Exclude items which are not in the Running state
 	filtered := make(map[uuid.UUID]*NcsiEP)
 	for k, v := range epc.epMap {
 		if v.State == EPstateRunning {
+			xlog.Debug("Adding ep: ", v)
 			filtered[k] = v
 		}
 	}
+	//	jsonData, err := json.MarshalIndent(epc.epMap, "", "\t")
+	jsonData, err := json.MarshalIndent(filtered, "", "\t")
 
 	epc.mutex.Unlock()
-
-	jsonData, err := json.MarshalIndent(filtered, "", "\t")
 
 	filtered = nil
 
