@@ -76,10 +76,14 @@ type NcsiEP struct {
 }
 
 func (ep *NcsiEP) ChangeState(s Epstate) {
-	xlog.WithDepth(xlog.WARN, 1, "ep=%s state from %s to %s",
-		ep.Uuid.String(), ep.State.String(), s.String())
+	if s != ep.State {
 
-	ep.State = s
+		old := ep.State
+
+		ep.State = s
+
+		ep.LogWithDepth(xlog.WARN, 1, "old-state=%s", old.String())
+	}
 }
 
 type epCommand struct {
@@ -144,6 +148,15 @@ func (c *epCommand) prep() {
 }
 
 func (c *epCommand) write() {
+}
+
+func (c *epCommand) submit() {
+	if err := c.ep.mayQueueCmd(); err == false {
+		c.ep.Log(xlog.INFO, "mayQueueCmd(): too many pending cmds")
+		return
+	}
+	c.prep()
+
 	c.err = ioutil.WriteFile(c.getInFnam(), c.getCmdBuf(), 0644)
 	if c.err != nil {
 		xlog.Errorf("ioutil.WriteFile(): %s", c.err)
@@ -152,50 +165,34 @@ func (c *epCommand) write() {
 	c.ep.LastRequest = time.Now()
 
 	if xlog.IsLevelEnabled(xlog.DEBUG) {
-		xlog.Debugf("ev-submit: uuid=%s %s: %s",
-			c.ep.Uuid, c.getInFnam(), c.cmd)
+		c.ep.Log(xlog.DEBUG, "uuid=%s %s: %s",
+			c.ep.Uuid.String(), c.getInFnam(), c.cmd)
 
 	} else if xlog.IsLevelEnabled(xlog.INFO) {
-		xlog.Infof("ev-submit: uuid=%s %s",
-			c.ep.Uuid, c.getInFnam())
+		c.ep.Log(xlog.INFO, "uuid=%s %s",
+			c.ep.Uuid.String(), c.getInFnam())
 	}
-}
-
-func (c *epCommand) submit() {
-	if err := c.ep.mayQueueCmd(); err == false {
-		xlog.Info("Too many pending commands for endpoint: ", c.ep.Uuid)
-		return
-	}
-	c.prep()
-	c.write()
 }
 
 func (ep *NcsiEP) mayQueueCmd() bool {
-	xlog.Debugf("uuid=%s pending=%d max=%d",
-		ep.Uuid, len(ep.pendingCmds), maxPendingCmdsEP)
+	ep.Log(xlog.DEBUG, "")
 
 	// Enforces a max queue depth of 1 for internal scheduling logic,
 	// while still allowing externally-triggered commands (e.g., via /v1/)
 	// to be processed.
 	if len(ep.pendingCmds) > 0 {
-		xlog.Debugf("ep %s has %d pending cmds",
-			ep.Uuid, len(ep.pendingCmds))
+		if time.Since(ep.LastRequest) > time.Second*EPtimeoutSec {
+			xlog.Debugf("ep %s has stale cmds (%f seconds), removing them from the queue",
+				ep.Uuid, EPtimeoutSec)
 
-		if len(ep.pendingCmds) > 0 {
-			if time.Since(ep.LastRequest) > time.Second*EPtimeoutSec {
-				xlog.Debugf("ep %s has stale cmds (%f seconds), removing them from the queue",
-					ep.Uuid, EPtimeoutSec)
+			for x := range ep.pendingCmds {
+				ep.removeCmd(x)
+			}
 
-				for x := range ep.pendingCmds {
-					xlog.Info("remove cmd: ", ep.Uuid, x)
-					ep.removeCmd(x)
-				}
-
-				if ep.State == EPstateInit {
-					ep.ChangeState(EPstateRemoving)
-				} else {
-					ep.ChangeState(EPstateDown)
-				}
+			if ep.State == EPstateInit {
+				ep.ChangeState(EPstateRemoving)
+			} else {
+				ep.ChangeState(EPstateDown)
 			}
 		}
 	}
@@ -223,6 +220,7 @@ func (ep *NcsiEP) removeCmd(cmdUUID uuid.UUID) *epCommand {
 	c, ok := ep.pendingCmds[cmdUUID]
 	if ok {
 		delete(ep.pendingCmds, cmdUUID)
+		ep.Log(xlog.INFO, "removed cmd %s", cmdUUID.String())
 	}
 	ep.Mutex.Unlock()
 
@@ -248,6 +246,42 @@ func (ep *NcsiEP) update(ctlData applications.CtlIfOut) {
 	if ep.State != EPstateRunning {
 		ep.ChangeState(EPstateRunning)
 	}
+}
+
+func (ep *NcsiEP) LogWithDepth(level int, depth int, format string,
+	args ...interface{}) {
+	// Common prefix fields
+	prefixFormat := "%s@%s s=%s pc=%d age=%s"
+	prefixArgs := []interface{}{
+		ep.App.GetAppName(),
+		ep.Uuid.String(),
+		ep.State.String(),
+		len(ep.pendingCmds),
+		time.Since(ep.LastReport).Truncate(time.Millisecond),
+	}
+
+	var combinedFmt string
+	var combinedArgs []interface{}
+
+	// If caller passed a format, combine it
+	if format != "" {
+		combinedFmt = prefixFormat + " :: " + format
+
+		if len(args) > 0 {
+			combinedArgs = append(prefixArgs, args...)
+		} else {
+			combinedArgs = prefixArgs
+		}
+	} else {
+		combinedFmt = prefixFormat
+		combinedArgs = prefixArgs
+	}
+
+	xlog.WithDepth(level, 1+depth, combinedFmt, combinedArgs...)
+}
+
+func (ep *NcsiEP) Log(level int, format string, args ...interface{}) {
+	ep.LogWithDepth(level, 1, format, args...)
 }
 
 func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
@@ -288,13 +322,13 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 
 	case applications.IdentifyOp:
 		ep.App, err = applications.DetermineApp(c.getOutJSON())
-		if err != nil {
-			xlog.Error("DetermineApp for ", ep.Uuid, " failed:", err)
-		}
-		xlog.Info("App type for ", ep.Uuid, " determined: ",
-			ep.App.GetAppName())
 
-		ep.ChangeState(EPstateRunning)
+		if err == nil {
+			ep.ChangeState(EPstateRunning)
+		} else {
+			xlog.Errorf("DetermineApp() uuid=%s err=%v",
+				ep.Uuid.String(), err)
+		}
 
 	default:
 	}
@@ -343,7 +377,7 @@ func (ep *NcsiEP) Detect() error {
 
 	switch ep.State {
 	case EPstateInit:
-		xlog.Info("try to determine app type for: ", ep.Uuid)
+		ep.Log(xlog.INFO, "")
 		c := epCommand{
 			ep:  ep,
 			cmd: "GET /.*",

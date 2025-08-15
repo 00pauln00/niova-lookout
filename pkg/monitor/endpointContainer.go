@@ -75,16 +75,7 @@ func (epc *EPContainer) PollEPs() {
 func (epc *EPContainer) Process(epUuid uuid.UUID, cmdUuid uuid.UUID) {
 
 	if ep := epc.epMap[epUuid]; ep != nil {
-		//		var output []byte
-		err := ep.Complete(cmdUuid, nil)
-
-		if err == nil {
-			xlog.Debugf("ep=%s cmd=%s",
-				epUuid.String(), cmdUuid.String())
-		} else {
-			xlog.Warnf("ep=%s cmd=%s err=%s",
-				epUuid.String(), cmdUuid.String(), err)
-		}
+		ep.Complete(cmdUuid, nil)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
 
+	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
@@ -136,7 +137,7 @@ func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
 
 	epUuid, err := uuid.Parse(tevnam[EV_PATHDEPTH_UUID])
 
-	xlog.Infof("event=%s, splitpath=%s, len=%d uuid-err=%v",
+	xlog.Debugf("event=%s, splitpath=%s, len=%d uuid-err=%v",
 		event.Name, tevnam, len(tevnam), err)
 
 	if err != nil {
@@ -233,6 +234,7 @@ func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
 		LastClear:   time.Now(), //XXx remove me!
 		State:       EPstateInit,
 		pendingCmds: make(map[uuid.UUID]*epCommand),
+		App:         &applications.Unrecognized{},
 	}
 
 	//XXXX this is all f'd up!

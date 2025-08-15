@@ -74,23 +74,33 @@ func Fatalf(format string, args ...interface{}) {
 
 func WithLevel(level int, format string, args ...interface{}) {
 	switch level {
-	case int(logrus.TraceLevel):
+	case TRACE:
 		Xlog.Tracef(format, args...)
-	case int(logrus.DebugLevel):
+	case DEBUG:
 		Xlog.Debugf(format, args...)
-	case int(logrus.InfoLevel):
+	case INFO:
 		Xlog.Infof(format, args...)
-	case int(logrus.WarnLevel):
+	case WARN:
 		Xlog.Warnf(format, args...)
-	case int(logrus.ErrorLevel):
+	case ERROR:
 		Xlog.Errorf(format, args...)
-	case int(logrus.FatalLevel):
+	case FATAL:
 		Xlog.Fatalf(format, args...)
-	case int(logrus.PanicLevel):
-		Xlog.Panicf(format, args...)
 	default:
 		Xlog.Printf(format, args...)
 	}
+}
+
+func WithErr(err error, errLevel int, okLevel int, format string,
+	args ...interface{}) {
+
+	level := okLevel
+
+	if err != nil {
+		level = errLevel
+	}
+
+	WithLevel(level, format, args)
 }
 
 func WithDepth(level int, depth int, format string, args ...interface{}) {
@@ -98,20 +108,18 @@ func WithDepth(level int, depth int, format string, args ...interface{}) {
 	entry := Xlog.WithField("depth", depth)
 
 	switch level {
-	case int(logrus.TraceLevel):
+	case TRACE:
 		entry.Tracef(format, args...)
-	case int(logrus.DebugLevel):
+	case DEBUG:
 		entry.Debugf(format, args...)
-	case int(logrus.InfoLevel):
+	case INFO:
 		entry.Infof(format, args...)
-	case int(logrus.WarnLevel):
+	case WARN:
 		entry.Warnf(format, args...)
-	case int(logrus.ErrorLevel):
+	case ERROR:
 		entry.Errorf(format, args...)
-	case int(logrus.FatalLevel):
+	case FATAL:
 		entry.Fatalf(format, args...)
-	case int(logrus.PanicLevel):
-		entry.Panicf(format, args...)
 	default:
 		entry.Printf(format, args...)
 	}
