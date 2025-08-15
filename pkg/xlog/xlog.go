@@ -72,6 +72,51 @@ func Fatalf(format string, args ...interface{}) {
 	Xlog.Fatalf(format, args...)
 }
 
+func WithLevel(level int, format string, args ...interface{}) {
+	switch level {
+	case int(logrus.TraceLevel):
+		Xlog.Tracef(format, args...)
+	case int(logrus.DebugLevel):
+		Xlog.Debugf(format, args...)
+	case int(logrus.InfoLevel):
+		Xlog.Infof(format, args...)
+	case int(logrus.WarnLevel):
+		Xlog.Warnf(format, args...)
+	case int(logrus.ErrorLevel):
+		Xlog.Errorf(format, args...)
+	case int(logrus.FatalLevel):
+		Xlog.Fatalf(format, args...)
+	case int(logrus.PanicLevel):
+		Xlog.Panicf(format, args...)
+	default:
+		Xlog.Printf(format, args...)
+	}
+}
+
+func WithDepth(level int, depth int, format string, args ...interface{}) {
+	// Use logrus standard logger
+	entry := Xlog.WithField("depth", depth)
+
+	switch level {
+	case int(logrus.TraceLevel):
+		entry.Tracef(format, args...)
+	case int(logrus.DebugLevel):
+		entry.Debugf(format, args...)
+	case int(logrus.InfoLevel):
+		entry.Infof(format, args...)
+	case int(logrus.WarnLevel):
+		entry.Warnf(format, args...)
+	case int(logrus.ErrorLevel):
+		entry.Errorf(format, args...)
+	case int(logrus.FatalLevel):
+		entry.Fatalf(format, args...)
+	case int(logrus.PanicLevel):
+		entry.Panicf(format, args...)
+	default:
+		entry.Printf(format, args...)
+	}
+}
+
 func IsLevelEnabled(level int) bool {
 	switch level {
 	case TRACE:
@@ -111,6 +156,11 @@ func (f *MyFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	fileBase := "unknown"
 	funcBase := "unknown"
 	line := 0
+	depth := 0
+
+	if d, ok := entry.Data["depth"].(int); ok {
+		depth = d
+	}
 
 	var fn *runtime.Func
 
@@ -124,10 +174,14 @@ func (f *MyFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 
 		if !strings.Contains(fn.Name(), "logrus") &&
 			!strings.Contains(fn.Name(), "xlog") {
-			fileBase = path.Base(file)
-			funcBase = path.Base(fn.Name())
-			line = xline
-			break
+			if depth == 0 {
+				fileBase = path.Base(file)
+				funcBase = path.Base(fn.Name())
+				line = xline
+				break
+			} else {
+				depth--
+			}
 		}
 	}
 

@@ -76,13 +76,7 @@ type NcsiEP struct {
 }
 
 func (ep *NcsiEP) ChangeState(s Epstate) {
-	// pc := make([]uintptr, 10) // at least 1 entry needed
-	// runtime.Callers(2, pc)
-	// f := runtime.FuncForPC(pc[0])
-	// file, line := f.FileLine(pc[0])
-	// fmt.Printf("%s:%d %s\n", file, line, f.Name())
-
-	xlog.Warnf("ep=%s state from %s to %s",
+	xlog.WithDepth(xlog.WARN, 1, "ep=%s state from %s to %s",
 		ep.Uuid.String(), ep.State.String(), s.String())
 
 	ep.State = s
