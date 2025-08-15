@@ -67,8 +67,6 @@ type NcsiEP struct {
 	NiovaSvcType string                   `json:"type"`
 	Port         int                      `json:"port"`
 	LastReport   time.Time                `json:"-"`
-	LastRequest  time.Time                `json:"-"`
-	LastClear    time.Time                `json:"-"` //XXX remove me
 	State        Epstate                  `json:"state"`
 	EPInfo       applications.CtlIfOut    `json:"ep_info"` //May need to change this to a pointer
 	pendingCmds  map[uuid.UUID]*epCommand `json:"-"`
@@ -162,7 +160,6 @@ func (c *epCommand) submit() {
 		xlog.Errorf("ioutil.WriteFile(): %s", c.err)
 		return
 	}
-	c.ep.LastRequest = time.Now()
 
 	if xlog.IsLevelEnabled(xlog.DEBUG) {
 		c.ep.Log(xlog.DEBUG, "uuid=%s %s: %s",
@@ -181,7 +178,7 @@ func (ep *NcsiEP) mayQueueCmd() bool {
 	// while still allowing externally-triggered commands (e.g., via /v1/)
 	// to be processed.
 	if len(ep.pendingCmds) > 0 {
-		if time.Since(ep.LastRequest) > time.Second*EPtimeoutSec {
+		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
 			xlog.Debugf("ep %s has stale cmds (%f seconds), removing them from the queue",
 				ep.Uuid, EPtimeoutSec)
 
@@ -342,21 +339,38 @@ func (ep *NcsiEP) removeFiles(folder string) {
 		return
 	}
 
+	now := time.Now()
+
 	for _, file := range files {
-		if strings.Contains(file.Name(), LookoutPrefixStr) {
-			ttl := OutfileTtlMinutes * time.Minute
-			expire := file.ModTime().Local().Add(ttl)
+		if !strings.Contains(file.Name(), LookoutPrefixStr) {
+			continue
+		}
 
-			if time.Now().After(expire) {
-				xerr := os.Remove(folder + file.Name())
+		fullPath := folder + file.Name()
+		info, statErr := os.Stat(fullPath)
 
-				if xerr != nil {
-					xlog.Warnf("os.Remove() %s: %v",
-						folder+file.Name(), xerr)
-				} else {
-					xlog.Debugf("os.Remove() %s: %v",
-						folder+file.Name(), xerr)
-				}
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				xlog.Debugf("file already missing: %s",
+					fullPath)
+			} else {
+				xlog.Warnf("os.State() %s: %v",
+					fullPath, statErr)
+			}
+			continue
+		}
+
+		expire := info.ModTime().Add(OutfileTtlMinutes)
+		if now.After(expire) {
+			xerr := os.Remove(folder + file.Name())
+
+			if xerr != nil {
+				xlog.Warnf("os.Remove() %s: %v",
+					folder+file.Name(), xerr)
+			} else {
+				xlog.Debugf("os.Remove() %s (age=%v): %v",
+					folder+file.Name(), now.Sub(expire),
+					xerr)
 			}
 		}
 	}
@@ -400,9 +414,8 @@ func (ep *NcsiEP) Detect() error {
 		}
 	case EPstateDown:
 		//see if app came back up every 60 seconds
-		if time.Since(ep.LastClear) > time.Second*EPtimeoutSec {
+		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
 			err = ep.queryApp()
-			ep.LastClear = time.Now()
 		}
 	default:
 	}

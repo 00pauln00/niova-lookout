@@ -231,7 +231,6 @@ func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
 		Uuid:        epUuid,
 		Path:        path,
 		LastReport:  time.Now(),
-		LastClear:   time.Now(), //XXx remove me!
 		State:       EPstateInit,
 		pendingCmds: make(map[uuid.UUID]*epCommand),
 		App:         &applications.Unrecognized{},
