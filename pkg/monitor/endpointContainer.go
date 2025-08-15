@@ -81,10 +81,10 @@ func (epc *EPContainer) Process(epUuid uuid.UUID, cmdUuid uuid.UUID) {
 		err := ep.Complete(cmdUuid, nil)
 
 		if err == nil {
-			xlog.Debugf("ep=%s cmd=%s XXX",
+			xlog.Debugf("ep=%s cmd=%s",
 				epUuid.String(), cmdUuid.String())
 		} else {
-			xlog.Warnf("ep=%s cmd=%s err=%s YYY",
+			xlog.Warnf("ep=%s cmd=%s err=%s",
 				epUuid.String(), cmdUuid.String(), err)
 		}
 	}

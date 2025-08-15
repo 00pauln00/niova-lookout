@@ -146,9 +146,9 @@ func main() {
 		}
 	}
 
-	portAddr = &RecvdPort
 	//Start lookout monitoring
 	logrus.Debug("Port Range: ", handler.coms.PortRange)
+	portAddr = &RecvdPort
 	handler.epc = monitor.EPContainer{
 		MonitorUUID: "*",
 	}
@@ -160,8 +160,8 @@ func main() {
 		HttpPort: handler.httpPort,
 	}
 
-	errs := make(chan error, 1)
 	//Start http service
+	errs := make(chan error, 1)
 
 	handler.coms.RetPort = portAddr
 	handler.coms.Epc = &handler.epc
