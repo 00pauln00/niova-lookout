@@ -136,7 +136,7 @@ func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
 
 	epUuid, err := uuid.Parse(tevnam[EV_PATHDEPTH_UUID])
 
-	xlog.Infof("event=%s, splitpath=%s, len=%d uuid-err=%s",
+	xlog.Infof("event=%s, splitpath=%s, len=%d uuid-err=%v",
 		event.Name, tevnam, len(tevnam), err)
 
 	if err != nil {

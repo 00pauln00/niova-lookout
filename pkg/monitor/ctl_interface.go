@@ -315,9 +315,19 @@ func (ep *NcsiEP) removeFiles(folder string) {
 
 	for _, file := range files {
 		if strings.Contains(file.Name(), LookoutPrefixStr) {
-			checkTime := file.ModTime().Local().Add(OutfileTtlMinutes * time.Minute)
-			if time.Now().After(checkTime) {
-				os.Remove(folder + file.Name())
+			ttl := OutfileTtlMinutes * time.Minute
+			expire := file.ModTime().Local().Add(ttl)
+
+			if time.Now().After(expire) {
+				xerr := os.Remove(folder + file.Name())
+
+				if xerr != nil {
+					xlog.Warnf("os.Remove() %s: %v",
+						folder+file.Name(), xerr)
+				} else {
+					xlog.Debugf("os.Remove() %s: %v",
+						folder+file.Name(), xerr)
+				}
 			}
 		}
 	}
