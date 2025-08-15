@@ -31,19 +31,20 @@ const (
 	LookoutPrefixStr  = "lkoep_"
 )
 
-type epstate int
+type Epstate int
 
 const (
-	EPstateUnknown epstate = iota
+	EPstateUnknown Epstate = iota
 	EPstateInit
 	EPstateRunning
 	EPstateDown
 	EPstateRemoving
+	EPstateAny
 )
 
 var OutfileTtlMinutes = 5 * time.Minute
 
-func (s epstate) String() string {
+func (s Epstate) String() string {
 	switch s {
 	case EPstateInit:
 		return "init"
@@ -68,13 +69,13 @@ type NcsiEP struct {
 	LastReport   time.Time                `json:"-"`
 	LastRequest  time.Time                `json:"-"`
 	LastClear    time.Time                `json:"-"` //XXX remove me
-	State        epstate                  `json:"state"`
+	State        Epstate                  `json:"state"`
 	EPInfo       applications.CtlIfOut    `json:"ep_info"` //May need to change this to a pointer
 	pendingCmds  map[uuid.UUID]*epCommand `json:"-"`
 	Mutex        sync.Mutex               `json:"-"`
 }
 
-func (ep *NcsiEP) ChangeState(s epstate) {
+func (ep *NcsiEP) ChangeState(s Epstate) {
 	// pc := make([]uintptr, 10) // at least 1 entry needed
 	// runtime.Callers(2, pc)
 	// f := runtime.FuncForPC(pc[0])

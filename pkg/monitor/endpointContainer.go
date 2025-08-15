@@ -2,12 +2,10 @@ package monitor
 
 import (
 	"encoding/json"
-	//	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	//	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
 
 	"github.com/00pauln00/niova-lookout/pkg/xlog"
@@ -113,25 +111,29 @@ func (epc *EPContainer) UpdateEpMap(uuid uuid.UUID, newlns *NcsiEP) {
 	epc.epMap[uuid] = newlns
 }
 
-func (epc *EPContainer) JsonMarshal() []byte {
+func (epc *EPContainer) JsonMarshal(state Epstate) []byte {
 	var jsonData []byte
+	var err error
 
 	epc.mutex.Lock()
 
-	// Exclude items which are not in the Running state
-	filtered := make(map[uuid.UUID]*NcsiEP)
-	for k, v := range epc.epMap {
-		if v.State == EPstateRunning {
-			xlog.Debug("Adding ep: ", v)
-			filtered[k] = v
+	if state == EPstateAny {
+		jsonData, err = json.MarshalIndent(epc.epMap, "", "\t")
+
+	} else {
+		// Exclude items which are not in the Running state
+		filtered := make(map[uuid.UUID]*NcsiEP)
+		for k, v := range epc.epMap {
+			if v.State == state {
+				xlog.Debug("Adding ep: ", v)
+				filtered[k] = v
+			}
 		}
+		jsonData, err = json.MarshalIndent(filtered, "", "\t")
+		filtered = nil
 	}
-	//	jsonData, err := json.MarshalIndent(epc.epMap, "", "\t")
-	jsonData, err := json.MarshalIndent(filtered, "", "\t")
 
 	epc.mutex.Unlock()
-
-	filtered = nil
 
 	if err != nil {
 		return nil

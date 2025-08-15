@@ -1,11 +1,8 @@
 package communication
 
 import (
-	//	"bytes"
-	//	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	//	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -69,7 +66,9 @@ type UdpMessage struct {
 func (h *CommHandler) CheckHTTPLiveness() {
 	var emptyByteArray []byte
 	for {
-		_, err := httpc.HTTP_Request(emptyByteArray, "127.0.0.1:"+strconv.Itoa(int(*h.RetPort))+"/check", false)
+		_, err := httpc.HTTP_Request(emptyByteArray,
+			"127.0.0.1:"+strconv.Itoa(int(*h.RetPort))+"/check",
+			false)
 		if err != nil {
 			xlog.Error("HTTP Liveness - ", err)
 		} else {
@@ -80,8 +79,9 @@ func (h *CommHandler) CheckHTTPLiveness() {
 	}
 }
 
-func (h *CommHandler) httpHandleRootRequest(w http.ResponseWriter) {
-	fmt.Fprintf(w, "%s\n", string(h.Epc.JsonMarshal()))
+func (h *CommHandler) httpHandleRootRequest(w http.ResponseWriter,
+	state monitor.Epstate) {
+	fmt.Fprintf(w, "%s\n", string(h.Epc.JsonMarshal(state)))
 }
 
 func (h *CommHandler) httpHandleUUIDRequest(w http.ResponseWriter,
@@ -93,7 +93,16 @@ func (h *CommHandler) httpHandleRoute(w http.ResponseWriter, r *url.URL) {
 	splitURL := strings.Split(r.String(), "/v0/")
 
 	if len(splitURL) == 2 && len(splitURL[1]) == 0 {
-		h.httpHandleRootRequest(w)
+		h.httpHandleRootRequest(w, monitor.EPstateRunning)
+
+	} else if splitURL[1] == "all" {
+		h.httpHandleRootRequest(w, monitor.EPstateAny)
+
+	} else if splitURL[1] == "down" {
+		h.httpHandleRootRequest(w, monitor.EPstateDown)
+
+	} else if splitURL[1] == "init" {
+		h.httpHandleRootRequest(w, monitor.EPstateInit)
 
 	} else if uuid, err := uuid.Parse(splitURL[1]); err == nil {
 		h.httpHandleUUIDRequest(w, uuid)
@@ -124,7 +133,7 @@ func (h *CommHandler) ServeHttp() error {
 			if strings.Contains(err.Error(), "bind") {
 				continue
 			} else {
-				xlog.Error("Error while starting lookout - ", err)
+				xlog.Error("net.Listen(): ", err)
 				return err
 			}
 		} else {
