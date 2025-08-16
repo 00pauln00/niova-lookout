@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
 
 	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
@@ -446,79 +445,4 @@ func (ep *NcsiEP) queryApp() error {
 	}
 	ep.Name = ep.App.GetAltName()
 	return err
-}
-
-func (ep *NcsiEP) IdentifyApplicationType() {
-	xlog.Info("GetAppType for: ", ep.Uuid)
-
-	c := epCommand{
-		ep:  ep,
-		cmd: "GET /.*",
-		op:  applications.IdentifyOp,
-		id:  uuid.New(),
-	}
-
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		xlog.Fatal("Failed to create watcher:", err)
-	}
-	defer watcher.Close()
-
-	outputDir := c.ep.epRoot() + "/output"
-	err = watcher.Add(outputDir)
-	if err != nil {
-		if errors.Is(err, syscall.ENOSPC) {
-			xlog.Error("Failed to add directory to watcher due to no space left on device:", err)
-		} else {
-			xlog.Fatal("Failed to add directory to watcher:", err)
-		}
-	}
-
-	done := make(chan bool)
-	go func() {
-		for {
-			select {
-			case event, ok := <-watcher.Events:
-				if !ok {
-					xlog.Trace("Watcher.Events closed")
-					return
-				}
-				xlog.Debug("Event received:", event)
-				if (event.Op&fsnotify.Write == fsnotify.Write ||
-					event.Op&fsnotify.Create == fsnotify.Create) && event.Name == outputDir+"/"+c.id.String() {
-					xlog.Trace("File modified:", event.Name)
-					done <- true
-				}
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					xlog.Info("Watcher.Errors closed")
-					return
-				}
-				xlog.Error("Watcher error:", err)
-			}
-		}
-	}()
-
-	c.submit()
-
-	select {
-	case <-done:
-		xlog.Debug("File write detected")
-	case <-time.After(1 * time.Second): // Timeout after 1 seconds
-		xlog.Warn("Timeout waiting for file write")
-	}
-
-	remove := ep.removeCmd(c.id)
-	if remove == nil {
-		xlog.Error("removeCmd returned nil")
-		return
-	}
-
-	remove.loadOutfile()
-	output := remove.getOutJSON()
-	ep.App, err = applications.DetermineApp(output)
-	if err != nil {
-		xlog.Error("DetermineApp for ", ep.Uuid, " failed:", err)
-	}
-	xlog.Info("App type for ", ep.Uuid, " determined: ", ep.App.GetAppName())
 }

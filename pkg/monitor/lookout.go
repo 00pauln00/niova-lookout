@@ -236,20 +236,13 @@ func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
 		App:         &applications.Unrecognized{},
 	}
 
-	//XXXX this is all f'd up!
-	//	ep.IdentifyApplicationType()
-	//	ep.App.SetUUID(epUuid)
-	//	ep.NiovaSvcType = ep.App.GetAppName()
-
 	if err := h.EpWatcher.Add(ep.Path + "/output"); err != nil {
 		xlog.Fatal("Watcher.Add() failed:", err)
 	}
 
 	h.Epc.UpdateEpMap(epUuid, &ep)
-	//	xlog.Infof("added: UUID=%s, Path=%s, State=%s, NiovaSvcType=%s",
-	//		ep.Uuid, ep.Path, ep.State.String(), ep.NiovaSvcType)
 
-	xlog.Infof("UUID=%s, State=%s", ep.Uuid.String(), ep.State.String())
+	ep.Log(xlog.INFO, "incoming ep")
 }
 
 func (h *LookoutHandler) init() error {
