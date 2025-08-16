@@ -148,11 +148,14 @@ func FillNisdCStruct(UUID string, ipaddr string, port int) []byte {
 	defer C.free(unsafe.Pointer(uuidCStr))
 	ipaddrCStr := C.CString(ipaddr)
 	defer C.free(unsafe.Pointer(ipaddrCStr))
-	C.strncpy(&(nisd_peer_config.nisd_uuid[0]), uuidCStr, C.ulong(len(UUID)+1))
-	C.strncpy(&(nisd_peer_config.nisd_ipaddr[0]), ipaddrCStr, C.ulong(len(ipaddr)+1))
+	C.strncpy(&(nisd_peer_config.nisd_uuid[0]), uuidCStr,
+		C.ulong(len(UUID)+1))
+	C.strncpy(&(nisd_peer_config.nisd_ipaddr[0]), ipaddrCStr,
+		C.ulong(len(ipaddr)+1))
 	nisd_peer_config.nisdc_addr_len = C.int(len(ipaddr))
 	nisd_peer_config.nisd_port = C.int(port)
-	returnData := C.GoBytes(unsafe.Pointer(&nisd_peer_config), C.sizeof_struct_nisd_config)
+	returnData := C.GoBytes(unsafe.Pointer(&nisd_peer_config),
+		C.sizeof_struct_nisd_config)
 	return returnData
 }
 
