@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/00pauln00/niova-lookout/pkg/prometheusHandler"
+	ph "github.com/00pauln00/niova-lookout/pkg/prometheusHandler"
 	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
@@ -219,43 +219,45 @@ func (n *Nisd) GetAltName() string {
 	return n.EPInfo.NISDRootEntry[0].AltName
 }
 
-func (n *Nisd) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.Request) {
-	var output string
-	labelMap["NISD_UUID"] = n.GetUUID().String()
-	labelMap["TYPE"] = n.GetAppName()
+func (n *Nisd) Parse(labels map[string]string, w http.ResponseWriter,
+	r *http.Request) {
+	var out string
+	labels["NISD_UUID"] = n.GetUUID().String()
+	labels["TYPE"] = n.GetAppName()
 
 	// print out node info for debugging
-	xlog.Trace("NISD UUID: ", n.GetUUID())
+	xlog.Debugf("NISD UUID=%s ", n.GetUUID().String())
 
-	// Load labelMap with NISD data if present
+	// Load labels with NISD data if present
 	if condition := len(n.EPInfo.NISDRootEntry) == 0; !condition {
-		labelMap = n.LoadNISDLabelMap(labelMap)
-		// Parse NISDInfo
-		output += prometheusHandler.GenericPromDataParser(n.EPInfo.NISDInformation[0], labelMap)
-		// Parse NISDRootEntry
-		output += prometheusHandler.GenericPromDataParser(n.EPInfo.NISDRootEntry[0], labelMap)
-		// Parse nisd system info
-		output += prometheusHandler.GenericPromDataParser(*n.EPInfo.SysInfo, labelMap)
+		labels = n.LoadNISDLabelMap(labels)
+
+		out += ph.GenericPromDataParser(n.EPInfo.NISDInformation[0],
+			labels)
+		out += ph.GenericPromDataParser(n.EPInfo.NISDRootEntry[0],
+			labels)
+		out += ph.GenericPromDataParser(*n.EPInfo.SysInfo, labels)
+
 		// Iterate and parse each NISDChunk if populated
 		for _, chunk := range n.EPInfo.NISDChunk {
-			// load labelMap with NISD chunk data
-			labelMap["VDEV_UUID"] = chunk.VdevUUID
-			labelMap["CHUNK_NUM"] = strconv.Itoa(chunk.Number)
+			// load labels with NISD chunk data
+			labels["VDEV_UUID"] = chunk.VdevUUID
+			labels["CHUNK_NUM"] = strconv.Itoa(chunk.Number)
 			// Parse each nisd chunk info
-			output += prometheusHandler.GenericPromDataParser(chunk, labelMap)
+			out += ph.GenericPromDataParser(chunk, labels)
 		}
-		//remove "VDEV_UUID" and "CHUNK_NUM" from labelMap
-		delete(labelMap, "VDEV_UUID")
-		delete(labelMap, "CHUNK_NUM")
+		//remove "VDEV_UUID" and "CHUNK_NUM" from labels
+		delete(labels, "VDEV_UUID")
+		delete(labels, "CHUNK_NUM")
 		// iterate and parse each buffer set node
 		for _, buffer := range n.EPInfo.BufSetNodes {
-			// load labelMap with buffer set node data
-			labelMap["NAME"] = buffer.Name
+			// load labels with buffer set node data
+			labels["NAME"] = buffer.Name
 			// Parse each buffer set node info
-			output += prometheusHandler.GenericPromDataParser(buffer, labelMap)
+			out += ph.GenericPromDataParser(buffer, labels)
 		}
 	}
-	fmt.Fprintf(w, "%s", output)
+	fmt.Fprintf(w, "%s", out)
 }
 
 func (n *Nisd) IsMonitoringEnabled() bool {
