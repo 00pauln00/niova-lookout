@@ -196,7 +196,7 @@ func (n *Nisd) GetAppDetectInfo(b bool) (string, EPcmdType) {
 }
 
 func (n *Nisd) SetCtlIfOut(c CtlIfOut) {
-	n.EPInfo.NISDInformation = c.NISDInformation
+	n.EPInfo.NISD = c.NISD
 	n.EPInfo.NISDRootEntry = c.NISDRootEntry
 	n.EPInfo.SysInfo = c.SysInfo
 	n.EPInfo.NISDChunk = c.NISDChunk
@@ -235,8 +235,7 @@ func (n *Nisd) Parse(labels map[string]string, w http.ResponseWriter,
 	if condition := len(n.EPInfo.NISDRootEntry) == 0; !condition {
 		labels = n.LoadNISDLabelMap(labels)
 
-		out += ph.GenericPromDataParser(n.EPInfo.NISDInformation[0],
-			labels)
+		out += ph.GenericPromDataParser(n.EPInfo.NISD[0], labels)
 		out += ph.GenericPromDataParser(n.EPInfo.NISDRootEntry[0],
 			labels)
 		out += ph.GenericPromDataParser(*n.EPInfo.SysInfo, labels)

@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/00pauln00/niova-lookout/pkg/prometheusHandler"
+	pm "github.com/00pauln00/niova-lookout/pkg/prometheusHandler"
 	"github.com/google/uuid"
 )
 
-type NiovaClient struct {
+type Nclient struct {
 	Uuid   uuid.UUID
 	EPInfo CtlIfOut
 }
 
-type NiovaClientInfo struct {
+type NclientInfo struct {
 	VdevUUID            string    `json:"vdev-uuid"`
 	Status              string    `json:"status"`
 	QueueDepth          int       `json:"queue-depth" type:"gauge" metric:"nclient_queue_depth"`
@@ -34,61 +34,63 @@ type NiovaClientInfo struct {
 	EcWriteLat          Histogram `json:"ec-write-lat" type:"histogram" metric:"nclient_ec_write_lat"`
 }
 
-func (n *NiovaClient) GetAppName() string {
+func (n *Nclient) GetAppName() string {
 	return "NCLIENT"
 }
 
-func (n *NiovaClient) GetCtlIfOut() CtlIfOut {
+func (n *Nclient) GetCtlIfOut() CtlIfOut {
 	return n.EPInfo
 }
 
-func (n *NiovaClient) GetMembership() map[string]bool {
+func (n *Nclient) GetMembership() map[string]bool {
 	return nil
 }
 
-func (n *NiovaClient) GetUUID() uuid.UUID {
+func (n *Nclient) GetUUID() uuid.UUID {
 	return n.Uuid
 }
 
-func (n *NiovaClient) GetAltName() string {
+func (n *Nclient) GetAltName() string {
 	return ""
 }
 
-func (n *NiovaClient) Parse(labelMap map[string]string, w http.ResponseWriter, r *http.Request) {
-	var output string
-	labelMap["NCLIENT_UUID"] = n.GetUUID().String()
-	labelMap["TYPE"] = n.GetAppName()
-	if condition := len(n.EPInfo.NiovaClientInformation.VdevUUID) > 0; condition {
-		output += prometheusHandler.GenericPromDataParser(*n.EPInfo.NiovaClientInformation, labelMap)
-		output += prometheusHandler.GenericPromDataParser(n.EPInfo.NISDInformation[0], labelMap)
-		output += prometheusHandler.GenericPromDataParser(*n.EPInfo.SysInfo, labelMap)
+func (n *Nclient) Parse(labels map[string]string, w http.ResponseWriter,
+	r *http.Request) {
+	var out string
+	labels["NCLIENT_UUID"] = n.GetUUID().String()
+	labels["TYPE"] = n.GetAppName()
+
+	if len(n.EPInfo.Nclient.VdevUUID) > 0 {
+		out += pm.GenericPromDataParser(*n.EPInfo.Nclient, labels)
+		out += pm.GenericPromDataParser(n.EPInfo.NISD[0], labels)
+		out += pm.GenericPromDataParser(*n.EPInfo.SysInfo, labels)
 	}
-	fmt.Fprintf(w, "%s", output)
+	fmt.Fprintf(w, "%s", out)
 }
 
-func (n *NiovaClient) SetCtlIfOut(c CtlIfOut) {
-	n.EPInfo.NiovaClientInformation = c.NiovaClientInformation
-	n.EPInfo.NISDInformation = c.NISDInformation
+func (n *Nclient) SetCtlIfOut(c CtlIfOut) {
+	n.EPInfo.Nclient = c.Nclient
+	n.EPInfo.NISD = c.NISD // XXX is this right?
 	n.EPInfo.SysInfo = c.SysInfo
 }
 
-func (n *NiovaClient) SetMembership(map[string]bool) {
+func (n *Nclient) SetMembership(map[string]bool) {
 	return
 }
 
-func (n *NiovaClient) SetUUID(uuid uuid.UUID) {
+func (n *Nclient) SetUUID(uuid uuid.UUID) {
 	n.Uuid = uuid
 }
 
-func (n *NiovaClient) GetAppDetectInfo(b bool) (string, EPcmdType) {
+func (n *Nclient) GetAppDetectInfo(b bool) (string, EPcmdType) {
 	return "GET /.*/.*/.*", NCLIENTInfoOp
 }
 
-func (n *NiovaClient) LoadSystemInfo(labelMap map[string]string) map[string]string {
-	labelMap["NODE_NAME"] = n.EPInfo.SysInfo.UtsNodename
-	return labelMap
+func (n *Nclient) LoadSystemInfo(labels map[string]string) map[string]string {
+	labels["NODE_NAME"] = n.EPInfo.SysInfo.UtsNodename
+	return labels
 }
 
-func (n *NiovaClient) IsMonitoringEnabled() bool {
+func (n *Nclient) IsMonitoringEnabled() bool {
 	return true
 }
