@@ -327,6 +327,7 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 		ep.App, err = applications.DetermineApp(c.getOutJSON())
 
 		if err == nil {
+			ep.App.SetUUID(ep.Uuid)
 			ep.ChangeState(EPstateHasIdentity)
 			ep.queryApp()
 		} else {
