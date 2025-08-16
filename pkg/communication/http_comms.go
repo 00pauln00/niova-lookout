@@ -104,6 +104,9 @@ func (h *CommHandler) httpHandleRoute(w http.ResponseWriter, r *url.URL) {
 	} else if splitURL[1] == "init" {
 		h.httpHandleRootRequest(w, monitor.EPstateInit)
 
+	} else if splitURL[1] == "removing" {
+		h.httpHandleRootRequest(w, monitor.EPstateRemoving)
+
 	} else if uuid, err := uuid.Parse(splitURL[1]); err == nil {
 		h.httpHandleUUIDRequest(w, uuid)
 
