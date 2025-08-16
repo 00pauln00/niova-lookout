@@ -5,16 +5,15 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
-	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+
+	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
+	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 // #include <unistd.h>
@@ -28,52 +27,93 @@ const (
 	outFileTimeoutSec = 2
 	outFilePollMsec   = 1
 	EPtimeoutSec      = 60.0
+	LookoutPrefixStr  = "lkoep_"
 )
 
+type Epstate int
+
+const (
+	EPstateUnknown Epstate = iota
+	EPstateInit
+	EPstateHasIdentity
+	EPstateRunning
+	EPstateDown
+	EPstateRemoving
+	EPstateAny
+)
+
+var OutfileTtlMinutes = 5 * time.Minute
+
+func (s Epstate) String() string {
+	switch s {
+	case EPstateInit:
+		return "init"
+	case EPstateHasIdentity:
+		return "identified"
+	case EPstateRunning:
+		return "running"
+	case EPstateDown:
+		return "down"
+	case EPstateRemoving:
+		return "removing"
+	default:
+		return "unknown"
+	}
+}
+
 type NcsiEP struct {
-	App          applications.AppIF    `json:"-"`
-	Uuid         uuid.UUID             `json:"-"`
-	Path         string                `json:"-"`
-	Name         string                `json:"name"`
-	NiovaSvcType string                `json:"type"`
-	Port         int                   `json:"port"`
-	LastReport   time.Time             `json:"-"`
-	LastRequest  time.Time             `json:"-"`
-	LastClear    time.Time             `json:"-"`
-	Alive        bool                  `json:"responsive"`
-	EPInfo       applications.CtlIfOut `json:"ep_info"` //May need to change this to a pointer
-	pendingCmds  map[string]*epCommand `json:"-"`
-	Mutex        sync.Mutex            `json:"-"`
+	App          applications.AppIF       `json:"-"`
+	Uuid         uuid.UUID                `json:"-"`
+	Path         string                   `json:"-"`
+	Name         string                   `json:"name"`
+	NiovaSvcType string                   `json:"type"`
+	Port         int                      `json:"port"`
+	LastReport   time.Time                `json:"-"`
+	State        Epstate                  `json:"state"`
+	EPInfo       applications.CtlIfOut    `json:"ep_info"` //May need to change this to a pointer
+	pendingCmds  map[uuid.UUID]*epCommand `json:"-"`
+	Mutex        sync.Mutex               `json:"-"`
+}
+
+func (ep *NcsiEP) ChangeState(s Epstate) {
+	if s != ep.State {
+
+		old := ep.State
+
+		ep.State = s
+
+		ep.LogWithDepth(xlog.WARN, 1, "old-state=%s", old.String())
+	}
 }
 
 type epCommand struct {
 	ep      *NcsiEP
 	cmd     string
-	fn      string
+	id      uuid.UUID
 	outJSON []byte
 	err     error
 	op      applications.EPcmdType
 }
 
-func (cmd *epCommand) getOutFnam() string {
-	return cmd.ep.epRoot() + "/output/" + cmd.fn
+func (c *epCommand) getOutFnam() string {
+	return c.ep.epRoot() + "/output/" + LookoutPrefixStr + c.id.String()
 }
 
-func (cmd *epCommand) getInFnam() string {
-	return cmd.ep.epRoot() + "/input/" + cmd.fn
+func (c *epCommand) getInFnam() string {
+	return c.ep.epRoot() + "/input/" + LookoutPrefixStr + c.id.String()
 }
 
-func (cmd *epCommand) getCmdBuf() []byte {
-	return []byte(cmd.cmd)
+func (c *epCommand) getCmdBuf() []byte {
+	return []byte(c.cmd)
 }
 
-func (cmd *epCommand) getOutJSON() []byte {
-	return []byte(cmd.outJSON)
+func (c *epCommand) getOutJSON() []byte {
+	return []byte(c.outJSON)
 }
 
-func (cmd *epCommand) checkOutFile() error {
+func (c *epCommand) checkOutFile() error {
 	var tmp_stb syscall.Stat_t
-	if err := syscall.Stat(cmd.getOutFnam(), &tmp_stb); err != nil {
+	if err := syscall.Stat(c.getOutFnam(), &tmp_stb); err != nil {
 		return err
 	}
 
@@ -84,83 +124,75 @@ func (cmd *epCommand) checkOutFile() error {
 	return nil
 }
 
-func (cmd *epCommand) loadOutfile() {
-	if cmd.err = cmd.checkOutFile(); cmd.err != nil {
+func (c *epCommand) loadOutfile() {
+	if c.err = c.checkOutFile(); c.err != nil {
+		c.ep.Log(xlog.ERROR, "checkOutFile(): %v", c.err)
 		return
 	}
 
 	// Try to read the file
-	cmd.outJSON, cmd.err = ioutil.ReadFile(cmd.getOutFnam())
-	if cmd.err != nil {
-		logrus.Errorf("checkOutFile(): %s getOutFnam %s",
-			cmd.err, cmd.getOutFnam())
+	c.outJSON, c.err = ioutil.ReadFile(c.getOutFnam())
+	if c.err != nil {
+		xlog.Errorf("checkOutFile(): %s getOutFnam %s",
+			c.err, c.getOutFnam())
 	}
 	return
 }
 
 // Makes a 'unique' filename for the command and adds it to the map
-func (cmd *epCommand) prep() {
-	if cmd.fn == "" {
-		cmd.fn = "testncsiep_" +
-			strconv.FormatInt(int64(os.Getpid()), 10) + "_" +
-			strconv.FormatInt(int64(time.Now().Nanosecond()), 10)
-	}
-	cmd.fn = "lookout_" + cmd.fn
-	cmd.cmd = cmd.cmd + "\nOUTFILE /" + cmd.fn + "\n"
+func (c *epCommand) prep() {
+	c.id = uuid.New()
+	c.cmd = c.cmd + "\nOUTFILE /" + LookoutPrefixStr + c.id.String() + "\n"
 
-	// Add the cmd into the endpoint's pending cmd map
-	cmd.ep.addCmd(cmd)
+	// Add the c into the endpoint's pending epc map
+	c.ep.addCmd(c)
 }
 
-func (cmd *epCommand) write() {
-	cmd.err = ioutil.WriteFile(cmd.getInFnam(), cmd.getCmdBuf(), 0644)
-	if cmd.err != nil {
-		logrus.Errorf("ioutil.WriteFile(): %s", cmd.err)
-		return
-	}
-	cmd.ep.LastRequest = time.Now()
-
-	if logrus.IsLevelEnabled(logrus.DebugLevel) {
-		logrus.Debugf("ev-submit: uuid=%s %s: %s",
-			cmd.ep.Uuid, cmd.getInFnam(), cmd.cmd)
-
-	} else if logrus.IsLevelEnabled(logrus.InfoLevel) {
-		logrus.Infof("ev-submit: uuid=%s %s",
-			cmd.ep.Uuid, cmd.getInFnam())
-	}
+func (c *epCommand) write() {
 }
 
-func (cmd *epCommand) submit() {
-	if err := cmd.ep.mayQueueCmd(); err == false {
-		logrus.Error("Too many pending commands for endpoint: ",
-			cmd.ep.Uuid)
+func (c *epCommand) submit() {
+	if err := c.ep.mayQueueCmd(); err == false {
+		c.ep.Log(xlog.INFO, "mayQueueCmd(): too many pending cmds")
 		return
 	}
-	cmd.prep()
-	cmd.write()
+	c.prep()
+
+	c.err = ioutil.WriteFile(c.getInFnam(), c.getCmdBuf(), 0644)
+	if c.err != nil {
+		xlog.Errorf("ioutil.WriteFile(): %s", c.err)
+		return
+	}
+
+	if xlog.IsLevelEnabled(xlog.DEBUG) {
+		c.ep.Log(xlog.DEBUG, "uuid=%s %s: %s",
+			c.ep.Uuid.String(), c.getInFnam(), c.cmd)
+
+	} else if xlog.IsLevelEnabled(xlog.INFO) {
+		c.ep.Log(xlog.INFO, "uuid=%s %s",
+			c.ep.Uuid.String(), c.getInFnam())
+	}
 }
 
 func (ep *NcsiEP) mayQueueCmd() bool {
-	logrus.Debugf("uuid=%s pending=%d max=%d",
-		ep.Uuid, len(ep.pendingCmds), maxPendingCmdsEP)
+	ep.Log(xlog.DEBUG, "")
 
 	// Enforces a max queue depth of 1 for internal scheduling logic,
 	// while still allowing externally-triggered commands (e.g., via /v1/)
 	// to be processed.
 	if len(ep.pendingCmds) > 0 {
-		logrus.Debugf("ep %s has %d pending cmds",
-			ep.Uuid, len(ep.pendingCmds))
+		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
+			xlog.Debugf("ep %s has stale cmds (%f seconds), removing them from the queue",
+				ep.Uuid, EPtimeoutSec)
 
-		if len(ep.pendingCmds) > 0 {
-			if time.Since(ep.LastRequest) > time.Second*EPtimeoutSec {
-				logrus.Debugf("ep %s has stale cmds (%f seconds), removing them from the queue",
-					ep.Uuid, EPtimeoutSec)
+			for x := range ep.pendingCmds {
+				ep.removeCmd(x)
+			}
 
-				for x := range ep.pendingCmds {
-					logrus.Info("remove cmd: ", ep.Uuid, x)
-					ep.removeCmd(x)
-				}
-				ep.Alive = false
+			if ep.State == EPstateInit {
+				ep.ChangeState(EPstateRemoving)
+			} else {
+				ep.ChangeState(EPstateDown)
 			}
 		}
 	}
@@ -170,9 +202,9 @@ func (ep *NcsiEP) mayQueueCmd() bool {
 func (ep *NcsiEP) addCmd(cmd *epCommand) error {
 	// Add the cmd into the endpoint's pending cmd map
 	cmd.ep.Mutex.Lock()
-	_, exists := cmd.ep.pendingCmds[cmd.fn]
+	_, exists := cmd.ep.pendingCmds[cmd.id]
 	if exists == false {
-		cmd.ep.pendingCmds[cmd.fn] = cmd
+		cmd.ep.pendingCmds[cmd.id] = cmd
 	}
 	cmd.ep.Mutex.Unlock()
 
@@ -183,66 +215,127 @@ func (ep *NcsiEP) addCmd(cmd *epCommand) error {
 	return nil
 }
 
-func (ep *NcsiEP) removeCmd(cmdName string) *epCommand {
+func (ep *NcsiEP) removeCmd(cmdUUID uuid.UUID) *epCommand {
 	ep.Mutex.Lock()
-	cmd, ok := ep.pendingCmds[cmdName]
+	c, ok := ep.pendingCmds[cmdUUID]
 	if ok {
-		delete(ep.pendingCmds, cmdName)
+		delete(ep.pendingCmds, cmdUUID)
+		ep.Log(xlog.INFO, "removed cmd %s", cmdUUID.String())
 	}
 	ep.Mutex.Unlock()
 
-	return cmd
+	return c
 }
 
 func (ep *NcsiEP) epRoot() string {
 	return ep.Path
 }
 
-func (ep *NcsiEP) CtlCustomQuery(customCMD string, ID string) error {
-	logrus.Infof("Custom query for endpoint %s: %s", ep.Uuid, customCMD)
-	cmd := epCommand{ep: ep, cmd: customCMD, op: applications.CustomOp, fn: ID}
-	cmd.submit()
-	return cmd.err
-}
+// func (ep *NcsiEP) CtlCustomQuery(customCMD string, ID string) error {
+// 	xlog.Infof("Custom query for endpoint %s: %s", ep.Uuid, customCMD)
+// 	cmd := epCommand{ep: ep, cmd: customCMD, op: applications.CustomOp, fn: ID}
+// 	cmd.submit()
+// 	return cmd.err
+// }
 
 func (ep *NcsiEP) update(ctlData applications.CtlIfOut) {
 	ep.App.SetCtlIfOut(ctlData)
 	ep.EPInfo = ep.App.GetCtlIfOut()
 	ep.LastReport = time.Now()
-	if !ep.Alive {
-		ep.Alive = true
+
+	if ep.State != EPstateRunning {
+		ep.ChangeState(EPstateRunning)
 	}
 }
 
-func (ep *NcsiEP) Complete(cmdName string, output *[]byte) error {
-	cmd := ep.removeCmd(cmdName)
-	if cmd == nil {
+func (ep *NcsiEP) LogWithDepth(level int, depth int, format string,
+	args ...interface{}) {
+	// Common prefix fields
+	prefixFormat := "%s@%s s=%s pc=%d age=%s"
+	prefixArgs := []interface{}{
+		ep.App.GetAppName(),
+		ep.Uuid.String(),
+		ep.State.String(),
+		len(ep.pendingCmds),
+		time.Since(ep.LastReport).Truncate(time.Millisecond),
+	}
+
+	var combinedFmt string
+	var combinedArgs []interface{}
+
+	// If caller passed a format, combine it
+	if format != "" {
+		combinedFmt = prefixFormat + " :: " + format
+
+		if len(args) > 0 {
+			combinedArgs = append(prefixArgs, args...)
+		} else {
+			combinedArgs = prefixArgs
+		}
+	} else {
+		combinedFmt = prefixFormat
+		combinedArgs = prefixArgs
+	}
+
+	xlog.WithDepth(level, 1+depth, combinedFmt, combinedArgs...)
+}
+
+func (ep *NcsiEP) Log(level int, format string, args ...interface{}) {
+	ep.LogWithDepth(level, 1, format, args...)
+}
+
+func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
+	c := ep.removeCmd(cmdUuid)
+	if c == nil {
 		return syscall.ENOENT
 	}
-	cmd.loadOutfile()
-	if cmd.err != nil {
-		return cmd.err
-	}
-	//Add here to break for custom command
-	if cmd.op == applications.CustomOp {
-		logrus.Debug("Custom command identified: ", cmdName)
-		*output = cmd.getOutJSON()
-		return nil
+
+	c.loadOutfile()
+	if c.err != nil {
+		return c.err
 	}
 
 	var err error
-	var ctlifout applications.CtlIfOut
-	if err = json.Unmarshal(cmd.getOutJSON(), &ctlifout); err != nil {
-		if ute, ok := err.(*json.UnmarshalTypeError); ok {
-			logrus.Errorf("UnmarshalTypeError %v - %v - %v\n",
-				ute.Value, ute.Type, ute.Offset)
-		} else {
-			logrus.Errorf("Other error: %s\n", err)
-			logrus.Errorf("Contents: %s\n", string(cmd.getOutJSON()))
+
+	switch c.op {
+	case applications.SystemInfoOp:
+		fallthrough
+	case applications.NISDInfoOp:
+		var err error
+		var ctlifout applications.CtlIfOut
+		if err = json.Unmarshal(c.getOutJSON(), &ctlifout); err != nil {
+			if ute, ok := err.(*json.UnmarshalTypeError); ok {
+				xlog.Errorf("UnmarshalTypeError %v - %v - %v\n",
+					ute.Value, ute.Type, ute.Offset)
+			} else {
+				xlog.Errorf("Other error: %s\n", err)
+				xlog.Errorf("Contents: %s\n",
+					string(c.getOutJSON()))
+			}
+			return err
 		}
-		return err
+		ep.update(ctlifout)
+
+	case applications.CustomOp:
+		//Add here to break for custom command
+		xlog.Debug("Custom command identified: ",
+			cmdUuid.String())
+		*output = c.getOutJSON()
+		return nil
+
+	case applications.IdentifyOp:
+		ep.App, err = applications.DetermineApp(c.getOutJSON())
+
+		if err == nil {
+			ep.App.SetUUID(ep.Uuid)
+			ep.ChangeState(EPstateHasIdentity)
+			ep.queryApp()
+		} else {
+			xlog.Errorf("DetermineApp() uuid=%s err=%v",
+				ep.Uuid.String(), err)
+		}
+	default:
 	}
-	ep.update(ctlifout)
 
 	return nil
 }
@@ -253,11 +346,38 @@ func (ep *NcsiEP) removeFiles(folder string) {
 		return
 	}
 
+	now := time.Now()
+
 	for _, file := range files {
-		if strings.Contains(file.Name(), "lookout") {
-			checkTime := file.ModTime().Local().Add(time.Hour)
-			if time.Now().After(checkTime) {
-				os.Remove(folder + file.Name())
+		if !strings.Contains(file.Name(), LookoutPrefixStr) {
+			continue
+		}
+
+		fullPath := folder + file.Name()
+		info, statErr := os.Stat(fullPath)
+
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				xlog.Debugf("file already missing: %s",
+					fullPath)
+			} else {
+				xlog.Warnf("os.State() %s: %v",
+					fullPath, statErr)
+			}
+			continue
+		}
+
+		expire := info.ModTime().Add(OutfileTtlMinutes)
+		if now.After(expire) {
+			xerr := os.Remove(folder + file.Name())
+
+			if xerr != nil {
+				xlog.Warnf("os.Remove() %s: %v",
+					folder+file.Name(), xerr)
+			} else {
+				xlog.Debugf("os.Remove() %s (age=%v): %v",
+					folder+file.Name(), now.Sub(expire),
+					xerr)
 			}
 		}
 	}
@@ -275,26 +395,45 @@ func (ep *NcsiEP) RemoveStaleFiles() {
 // Called every sleep time (default 20 seconds) to check if the endpoint is alive
 func (ep *NcsiEP) Detect() error {
 	var err error
-	if ep.App == nil {
-		return errors.New("app is nil")
-	}
-	if ep.Alive {
-		err = ep.GetAppInfo()
+
+	switch ep.State {
+	case EPstateInit:
+		ep.Log(xlog.INFO, "")
+		c := epCommand{
+			ep:  ep,
+			cmd: "GET /.*",
+			op:  applications.IdentifyOp,
+			id:  uuid.New(),
+		}
+		c.submit()
+
+	case EPstateHasIdentity:
+		err = ep.queryApp()
+
+	case EPstateRunning:
+		if ep.App == nil {
+			return errors.New("Running ep has nil app")
+		}
+
+		err = ep.queryApp()
 		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
-			logrus.Debugf("Endpoint %s timed out\n", ep.Uuid)
-			ep.Alive = false
+			xlog.Debugf("Endpoint %s timed out\n", ep.Uuid)
+			if ep.State == EPstateRunning {
+				ep.ChangeState(EPstateDown)
+			}
 		}
-	} else {
+	case EPstateDown:
 		//see if app came back up every 60 seconds
-		if time.Since(ep.LastClear) > time.Second*EPtimeoutSec {
-			err = ep.GetAppInfo()
-			ep.LastClear = time.Now()
+		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
+			err = ep.queryApp()
 		}
+	default:
 	}
+
 	return err
 }
 
-func (ep *NcsiEP) GetAppInfo() error {
+func (ep *NcsiEP) queryApp() error {
 	var err error
 	cmdStr, op := ep.App.GetAppDetectInfo(false)
 	cmd := epCommand{ep: ep, cmd: cmdStr, op: op}
@@ -307,79 +446,4 @@ func (ep *NcsiEP) GetAppInfo() error {
 	}
 	ep.Name = ep.App.GetAltName()
 	return err
-}
-
-func (ep *NcsiEP) IdentifyApplicationType() {
-	logrus.Info("GetAppType for: ", ep.Uuid)
-
-	cmd := epCommand{
-		ep:  ep,
-		cmd: "GET /.*",
-		op:  applications.IdentifyOp,
-		fn:  "lookout_identify",
-	}
-
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		logrus.Fatal("Failed to create watcher:", err)
-	}
-	defer watcher.Close()
-
-	outputDir := cmd.ep.epRoot() + "/output"
-	err = watcher.Add(outputDir)
-	if err != nil {
-		if errors.Is(err, syscall.ENOSPC) {
-			logrus.Error("Failed to add directory to watcher due to no space left on device:", err)
-		} else {
-			logrus.Fatal("Failed to add directory to watcher:", err)
-		}
-	}
-
-	done := make(chan bool)
-	go func() {
-		for {
-			select {
-			case event, ok := <-watcher.Events:
-				if !ok {
-					logrus.Trace("Watcher events channel closed")
-					return
-				}
-				logrus.Debug("Event received:", event)
-				if (event.Op&fsnotify.Write == fsnotify.Write ||
-					event.Op&fsnotify.Create == fsnotify.Create) && event.Name == outputDir+"/"+cmd.fn {
-					logrus.Trace("File modified:", event.Name)
-					done <- true
-				}
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					logrus.Trace("Watcher errors channel closed")
-					return
-				}
-				logrus.Error("Watcher error:", err)
-			}
-		}
-	}()
-
-	cmd.submit()
-
-	select {
-	case <-done:
-		logrus.Debug("File write detected")
-	case <-time.After(1 * time.Second): // Timeout after 1 seconds
-		logrus.Warn("Timeout waiting for file write")
-	}
-
-	c := ep.removeCmd(cmd.fn)
-	if c == nil {
-		logrus.Error("removeCmd returned nil")
-		return
-	}
-
-	c.loadOutfile()
-	output := c.getOutJSON()
-	ep.App, err = applications.DetermineApp(output)
-	if err != nil {
-		logrus.Error("DetermineApp for ", ep.Uuid, " failed:", err)
-	}
-	logrus.Info("App type for ", ep.Uuid, " determined: ", ep.App.GetAppName())
 }

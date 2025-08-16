@@ -4,7 +4,8 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+
+	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 // TODO: This may have to become an object of the app. the system itself is not an app but the system in which the app is running on.
@@ -46,7 +47,7 @@ func (s *Syst) GetAppDetectInfo(b bool) (string, EPcmdType) {
 
 func (s *Syst) SetCtlIfOut(c CtlIfOut) {
 	s.EPInfo.SysInfo = c.SysInfo
-	logrus.Debugf("update-sys %+v \n", c.SysInfo)
+	xlog.Debugf("update-sys %+v \n", c.SysInfo)
 }
 
 func (s *Syst) GetCtlIfOut() CtlIfOut {

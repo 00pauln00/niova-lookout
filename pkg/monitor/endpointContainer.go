@@ -2,14 +2,13 @@ package monitor
 
 import (
 	"encoding/json"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+
+	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 type EPContainer struct {
@@ -31,50 +30,52 @@ func (epc *EPContainer) MarkAlive(serviceUUID string) error {
 	if err != nil {
 		return err
 	}
-	service, ok := epc.epMap[serviceID]
-	if ok && service.Alive {
-		service.pendingCmds = make(map[string]*epCommand)
-		service.Alive = true
-		service.LastReport = time.Now()
+	svc, ok := epc.epMap[serviceID]
+	if ok && (svc.State == EPstateInit || svc.State == EPstateDown) {
+		panic("This code path is broken")
+		svc.pendingCmds = make(map[uuid.UUID]*epCommand)
+
+		svc.ChangeState(EPstateRunning)
+		svc.LastReport = time.Now()
 	}
 	return nil
 }
 
-func (epc *EPContainer) RefreshEndpoints() {
+// XXX this should not just blast through them, it should try to use the entire
+// timeout period
+func (epc *EPContainer) PollEPs() {
 	for _, ep := range epc.epMap {
 		// only check liveness for local EPs
 		ep.RemoveStaleFiles()
+
 		err := ep.Detect()
 		if err != nil {
-			logrus.Error(err)
+			xlog.Error("ep.Detect(): ", err)
 		}
 	}
 }
 
-func (epc *EPContainer) HandleHttpQuery(cmpstr string, uuid uuid.UUID) {
-	if strings.Contains(cmpstr, "HTTP") {
-		var output []byte
-		if ep := epc.epMap[uuid]; ep != nil {
-			err := ep.Complete(cmpstr, &output)
-			if err != nil {
-				output = []byte(err.Error())
-			}
-		}
+// func (epc *EPContainer) HandleHttpQuery(cmpstr string, uuid uuid.UUID) {
+// 	if strings.Contains(cmpstr, "HTTP") {
+// 		var output []byte
+// 		if ep := epc.epMap[uuid]; ep != nil {
+// 			err := ep.Complete(cmpstr, &output)
+// 			if err != nil {
+// 				output = []byte(err.Error())
+// 			}
+// 		}
 
-		if channel, ok := epc.HttpQuery[cmpstr]; ok {
-			channel <- output
-		}
-		return
-	}
-}
+// 		if channel, ok := epc.HttpQuery[cmpstr]; ok {
+// 			channel <- output
+// 		}
+// 		return
+// 	}
+// }
 
-func (epc *EPContainer) ProcessEndpoint(cmpstr string, uuid uuid.UUID, event *fsnotify.Event) {
-	if ep := epc.epMap[uuid]; ep != nil {
-		var output []byte
-		err := ep.Complete(cmpstr, &output)
-		if err != nil {
-			logrus.Debug("ProcessEndpoint - ", err, event.Name)
-		}
+func (epc *EPContainer) Process(epUuid uuid.UUID, cmdUuid uuid.UUID) {
+
+	if ep := epc.epMap[epUuid]; ep != nil {
+		ep.Complete(cmdUuid, nil)
 	}
 }
 
@@ -101,10 +102,28 @@ func (epc *EPContainer) UpdateEpMap(uuid uuid.UUID, newlns *NcsiEP) {
 	epc.epMap[uuid] = newlns
 }
 
-func (epc *EPContainer) JsonMarshal() []byte {
+func (epc *EPContainer) JsonMarshal(state Epstate) []byte {
 	var jsonData []byte
+	var err error
+
 	epc.mutex.Lock()
-	jsonData, err := json.MarshalIndent(epc.epMap, "", "\t")
+
+	if state == EPstateAny {
+		jsonData, err = json.MarshalIndent(epc.epMap, "", "\t")
+
+	} else {
+		// Exclude items which are not in the Running state
+		filtered := make(map[uuid.UUID]*NcsiEP)
+		for k, v := range epc.epMap {
+			if v.State == state {
+				xlog.Debug("Adding ep: ", v)
+				filtered[k] = v
+			}
+		}
+		jsonData, err = json.MarshalIndent(filtered, "", "\t")
+		filtered = nil
+	}
+
 	epc.mutex.Unlock()
 
 	if err != nil {

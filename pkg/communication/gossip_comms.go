@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -13,16 +12,16 @@ import (
 	"strings"
 	"time"
 
-	compressionLib "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
+	"github.com/google/uuid"
 
-	serfAgent "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
+	compress "github.com/00pauln00/niova-pumicedb/go/pkg/utils/compressor"
+	serf "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
+	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 
-	serviceDiscovery "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
-
+	"github.com/00pauln00/niova-lookout/pkg/monitor"
 	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
-	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 var SetTagsInterval int = 10
@@ -46,7 +45,7 @@ func (h *CommHandler) StartSerfAgent() error {
 		return err
 	}
 
-	h.SerfHandler = serfAgent.SerfAgentHandler{
+	h.SerfHandler = serf.SerfAgentHandler{
 		Name:              h.AgentName,
 		Addr:              h.Addr,
 		ServicePortRangeS: uint16(h.ServicePortRangeS),
@@ -59,41 +58,27 @@ func (h *CommHandler) StartSerfAgent() error {
 	memCount, err := h.SerfHandler.SerfAgentStartup(true)
 	// if no members were found, wait for a while and try again. giving other serf agents time to start
 	if memCount == 0 {
-		logrus.Warn("No serf members found, retrying...")
+		xlog.Warn("No serf members found, retrying...")
 		for i := 0; i < 3; i++ {
 			time.Sleep(5 * time.Second)
 			memCount, err = h.SerfHandler.SerfAgentStartup(true)
 			if memCount > 0 {
 				break
 			}
-			logrus.Warn("No serf members found, retrying... (attempt ", i+1, ")")
+			xlog.Warn("No serf members found, retrying... (attempt ", i+1, ")")
 		}
 		if memCount == 0 {
-			logrus.Error("Failed to start serf agent after 3 attempts")
+			xlog.Error("Failed to start serf agent after 3 attempts")
 			return err
 		}
 	}
-	logrus.Info("Serf agent started with ", memCount, " members")
+	xlog.Info("Serf agent started with ", memCount, " members")
 	return err
-}
-
-func setLogOutput(logPath string) {
-	switch logPath {
-	case "ignore":
-		logrus.SetOutput(ioutil.Discard)
-	default:
-		f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
-		if err != nil {
-			logrus.SetOutput(os.Stderr)
-		} else {
-			logrus.SetOutput(f)
-		}
-	}
 }
 
 func (h *CommHandler) StartClientAPI() {
 	//Init niovakv client API?
-	h.StorageClient = serviceDiscovery.ServiceDiscoveryHandler{
+	h.StorageClient = sd.ServiceDiscoveryHandler{
 		HTTPRetry: 10,
 		SerfRetry: 5,
 		RaftUUID:  h.RaftUUID,
@@ -102,7 +87,7 @@ func (h *CommHandler) StartClientAPI() {
 	go func() {
 		err := h.StorageClient.StartClientAPI(stop, h.GossipNodesPath)
 		if err != nil {
-			logrus.Error("Error while starting client API : ", err)
+			xlog.Error("Error while starting client API : ", err)
 		}
 	}()
 	h.StorageClient.TillReady("", 0)
@@ -110,27 +95,27 @@ func (h *CommHandler) StartClientAPI() {
 
 // StartUDPListner listens for incoming UDP messages and delegates handling to getConfigNSend.
 func (h *CommHandler) StartUDPListner() {
-	logrus.Trace("StartUDPListner called for port ", h.UdpPort)
+	xlog.Trace("StartUDPListner called for port ", h.UdpPort)
 	var err error
 	h.UdpSocket, err = net.ListenPacket("udp", ":"+h.UdpPort)
 	if err != nil {
-		logrus.Error("UDP listner failed : ", err)
+		xlog.Error("UDP listner failed : ", err)
 	}
 
 	defer h.UdpSocket.Close()
 	for {
-		logrus.Debug("UDP listner waiting for message")
+		xlog.Debug("UDP listner waiting for message")
 		buf := make([]byte, 1024)
 		_, addr, err := h.UdpSocket.ReadFrom(buf)
 		if err != nil {
-			logrus.Error("UDP read failed : ", err)
+			xlog.Error("UDP read failed : ", err)
 			continue
 		}
 		udpInfo := UdpMessage{
 			addr:    addr,
 			message: buf,
 		}
-		logrus.Debug("UDP message received from ", addr)
+		xlog.Debug("UDP message received from ", addr)
 		go h.getConfigNSend(udpInfo)
 	}
 }
@@ -167,7 +152,7 @@ func (h *CommHandler) SetTags() {
 		tagData := h.GetCompressedGossipData()
 		err := h.SerfHandler.SetNodeTags(tagData)
 		if err != nil {
-			logrus.Debug("setTags: ", err)
+			xlog.Debug("setTags: ", err)
 		}
 		time.Sleep(time.Duration(SetTagsInterval) * time.Second)
 	}
@@ -186,20 +171,20 @@ func (h *CommHandler) GetTags() {
 			// Parse last seen time
 			lastSeen, err := strconv.ParseInt(loTime, 10, 64)
 			if err != nil {
-				logrus.Error("Failed to parse LO-Time: ", err)
+				xlog.Error("Failed to parse LO-Time: ", err)
 				continue
 			}
 			readableTime := time.Unix(lastSeen, 0).Format("2006-01-02 15:04:05")
 			// Decode LO-IPAddr
 			var ipAddrs []string
 			if err := json.Unmarshal([]byte(addr["LO-IPAddr"]), &ipAddrs); err != nil {
-				logrus.Error("Failed to parse LO-IPAddr: ", err)
+				xlog.Error("Failed to parse LO-IPAddr: ", err)
 				continue
 			}
 			// Decode LO-PortRange
 			var portRange string
 			if err := json.Unmarshal([]byte(addr["LO-PortRange"]), &portRange); err != nil {
-				logrus.Error("Failed to parse LO-PortRange: ", err)
+				xlog.Error("Failed to parse LO-PortRange: ", err)
 				continue
 			}
 			lookout := &LookoutInfo{
@@ -217,21 +202,21 @@ func (h *CommHandler) GetTags() {
 				}
 
 				// Decompress UUID key
-				uuidStr, err := compressionLib.DecompressUUID(key)
+				uuidStr, err := compress.DecompressUUID(key)
 				if err != nil {
-					logrus.Error("Failed to decompress UUID key: ", key, " error: ", err)
+					xlog.Error("Failed to decompress UUID key: ", key, " error: ", err)
 					continue
 				}
 				parsedUUID, err := uuid.Parse(uuidStr)
 				if err != nil {
-					logrus.Error("Invalid UUID: ", uuidStr)
+					xlog.Error("Invalid UUID: ", uuidStr)
 					continue
 				}
 
 				// Decode MonitoredApp JSON value
 				var gData MonitoredApp
 				if err := json.Unmarshal([]byte(value), &gData); err != nil {
-					logrus.Error("Failed to unmarshal MonitoredApp: ", err)
+					xlog.Error("Failed to unmarshal MonitoredApp: ", err)
 					continue
 				}
 
@@ -243,7 +228,7 @@ func (h *CommHandler) GetTags() {
 			h.Lookouts[loUUID] = lookout
 			h.mu.Unlock()
 
-			logrus.Tracef("Updated Lookout: %s, Monitoring %d apps", loUUID, len(lookout.Apps))
+			xlog.Tracef("Updated Lookout: %s, Monitoring %d apps", loUUID, len(lookout.Apps))
 		}
 
 		//TODO: make this a variable
@@ -260,9 +245,9 @@ func (h *CommHandler) GetCompressedGossipData() map[string]string {
 			//Get data from map
 			epUUID := ep.Uuid.String()
 			//Compact the uuid
-			cuuid, _ := compressionLib.CompressUUID(epUUID)
+			cuuid, _ := compress.CompressUUID(epUUID)
 			cstatus := "0"
-			if ep.Alive {
+			if ep.State == monitor.EPstateRunning {
 				cstatus = "1"
 			}
 			//add type
@@ -276,7 +261,7 @@ func (h *CommHandler) GetCompressedGossipData() map[string]string {
 
 			marshaledGossipDataStruct, err := json.Marshal(gossipDataStruct)
 			if err != nil {
-				logrus.Error("Error while marshaling GossipData struct: ", err)
+				xlog.Error("Error while marshaling GossipData struct: ", err)
 				continue
 			}
 			gossipData[cuuid] = string(marshaledGossipDataStruct)
@@ -303,12 +288,12 @@ func (h *CommHandler) GetCompressedGossipData() map[string]string {
 func (h *CommHandler) LoadConfigInfo() error {
 	//Get addrs and Rports and store it in h
 	if _, err := os.Stat(h.GossipNodesPath); os.IsNotExist(err) {
-		logrus.Error("GossipNodesPath does not exist:", h.GossipNodesPath)
+		xlog.Error("GossipNodesPath does not exist:", h.GossipNodesPath)
 		return err
 	}
 	reader, err := os.OpenFile(h.GossipNodesPath, os.O_RDONLY, 0444)
 	if err != nil {
-		logrus.Error("Error while opening GossipNodesPath file")
+		xlog.Error("Error while opening GossipNodesPath file")
 		return err
 	}
 
@@ -325,13 +310,13 @@ func (h *CommHandler) LoadConfigInfo() error {
 		ipAddr := net.ParseIP(IPAddrs[i])
 		h.addrList = append(h.addrList, ipAddr)
 	}
-	logrus.Debug("IPAddrs:", IPAddrs)
+	xlog.Debug("IPAddrs:", IPAddrs)
 	h.Addr = net.ParseIP(IPAddrs[0])
 
 	//Read Ports
 	scanner.Scan()
 	Ports := strings.Split(scanner.Text(), " ")
-	logrus.Debug("Ports:", Ports)
+	xlog.Debug("Ports:", Ports)
 	temp, _ := strconv.Atoi(Ports[0])
 	h.ServicePortRangeS = uint16(temp)
 	temp, _ = strconv.Atoi(Ports[1])
