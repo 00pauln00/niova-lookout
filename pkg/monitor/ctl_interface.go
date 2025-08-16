@@ -36,6 +36,7 @@ type Epstate int
 const (
 	EPstateUnknown Epstate = iota
 	EPstateInit
+	EPstateHasIdentity
 	EPstateRunning
 	EPstateDown
 	EPstateRemoving
@@ -48,6 +49,8 @@ func (s Epstate) String() string {
 	switch s {
 	case EPstateInit:
 		return "init"
+	case EPstateHasIdentity:
+		return "identified"
 	case EPstateRunning:
 		return "running"
 	case EPstateDown:
@@ -124,6 +127,7 @@ func (c *epCommand) checkOutFile() error {
 
 func (c *epCommand) loadOutfile() {
 	if c.err = c.checkOutFile(); c.err != nil {
+		c.ep.Log(xlog.ERROR, "checkOutFile(): %v", c.err)
 		return
 	}
 
@@ -296,6 +300,8 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 
 	switch c.op {
 	case applications.SystemInfoOp:
+		fallthrough
+	case applications.NISDInfoOp:
 		var err error
 		var ctlifout applications.CtlIfOut
 		if err = json.Unmarshal(c.getOutJSON(), &ctlifout); err != nil {
@@ -304,7 +310,8 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 					ute.Value, ute.Type, ute.Offset)
 			} else {
 				xlog.Errorf("Other error: %s\n", err)
-				xlog.Errorf("Contents: %s\n", string(c.getOutJSON()))
+				xlog.Errorf("Contents: %s\n",
+					string(c.getOutJSON()))
 			}
 			return err
 		}
@@ -321,12 +328,12 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 		ep.App, err = applications.DetermineApp(c.getOutJSON())
 
 		if err == nil {
-			ep.ChangeState(EPstateRunning)
+			ep.ChangeState(EPstateHasIdentity)
+			ep.queryApp()
 		} else {
 			xlog.Errorf("DetermineApp() uuid=%s err=%v",
 				ep.Uuid.String(), err)
 		}
-
 	default:
 	}
 
@@ -399,6 +406,9 @@ func (ep *NcsiEP) Detect() error {
 			id:  uuid.New(),
 		}
 		c.submit()
+
+	case EPstateHasIdentity:
+		err = ep.queryApp()
 
 	case EPstateRunning:
 		if ep.App == nil {
