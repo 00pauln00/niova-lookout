@@ -83,6 +83,8 @@ func (h *LookoutHandler) lookoutLsof() error {
 			if u, err := uuid.Parse(base); err == nil {
 				// Try to find the endpoint at this uuid
 				h.Epc.LsofGenAddOrUpdateEp(h, u)
+
+				break // Only need to process the first found
 			}
 		}
 	}
