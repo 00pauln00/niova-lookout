@@ -64,7 +64,6 @@ func (s Epstate) String() string {
 type NcsiEP struct {
 	App          applications.AppIF       `json:"-"`
 	Uuid         uuid.UUID                `json:"-"`
-	Path         string                   `json:"-"`
 	Name         string                   `json:"name"`
 	NiovaSvcType string                   `json:"type"`
 	Port         int                      `json:"port"`
@@ -73,6 +72,7 @@ type NcsiEP struct {
 	EPInfo       applications.CtlIfOut    `json:"ep_info"` //May need to change this to a pointer
 	pendingCmds  map[uuid.UUID]*epCommand `json:"-"`
 	Mutex        sync.Mutex               `json:"-"`
+	lh           *LookoutHandler          `json:"-"`
 }
 
 func (ep *NcsiEP) ChangeState(s Epstate) {
@@ -95,12 +95,20 @@ type epCommand struct {
 	op      applications.EPcmdType
 }
 
+type EpPath string
+
+const (
+	EP_PATH_ROOT   EpPath = ""
+	EP_PATH_INPUT  EpPath = "/input/"
+	EP_PATH_OUTPUT EpPath = "/output/"
+)
+
 func (c *epCommand) getOutFnam() string {
-	return c.ep.epRoot() + "/output/" + LookoutPrefixStr + c.id.String()
+	return c.ep.Xpath(EP_PATH_OUTPUT) + LookoutPrefixStr + c.id.String()
 }
 
 func (c *epCommand) getInFnam() string {
-	return c.ep.epRoot() + "/input/" + LookoutPrefixStr + c.id.String()
+	return c.ep.Xpath(EP_PATH_INPUT) + LookoutPrefixStr + c.id.String()
 }
 
 func (c *epCommand) getCmdBuf() []byte {
@@ -174,6 +182,14 @@ func (c *epCommand) submit() {
 	}
 }
 
+func (ep *NcsiEP) Xpath(p EpPath) string {
+	path := ep.lh.CTLPath + "/" + ep.Uuid.String() + string(p)
+
+	ep.LogWithDepth(xlog.DEBUG, 1, "%s", path)
+
+	return path
+}
+
 func (ep *NcsiEP) mayQueueCmd() bool {
 	ep.Log(xlog.DEBUG, "")
 
@@ -225,10 +241,6 @@ func (ep *NcsiEP) removeCmd(cmdUUID uuid.UUID) *epCommand {
 	ep.Mutex.Unlock()
 
 	return c
-}
-
-func (ep *NcsiEP) epRoot() string {
-	return ep.Path
 }
 
 // func (ep *NcsiEP) CtlCustomQuery(customCMD string, ID string) error {
@@ -384,12 +396,8 @@ func (ep *NcsiEP) removeFiles(folder string) {
 }
 
 func (ep *NcsiEP) RemoveStaleFiles() {
-	//Remove stale ctl files
-	input_path := ep.Path + "/input/"
-	ep.removeFiles(input_path)
-	//output files
-	output_path := ep.Path + "/output/"
-	ep.removeFiles(output_path)
+	ep.removeFiles(ep.Xpath(EP_PATH_INPUT))
+	ep.removeFiles(ep.Xpath(EP_PATH_OUTPUT))
 }
 
 // Called every sleep time (default 20 seconds) to check if the endpoint is alive

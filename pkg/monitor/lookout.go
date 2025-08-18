@@ -1,8 +1,10 @@
 package monitor
 
 import (
+	//	"fmt"
 	"io/ioutil"
 	"os"
+	//	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -11,7 +13,6 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
 
-	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
@@ -205,44 +206,7 @@ func (h *LookoutHandler) scan() {
 }
 
 func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
-	x := h.Epc.Lookup(epUuid)
-
-	if x != nil {
-		xlog.Infof("ep=%s (state=%s) already exists",
-			epUuid.String(), x.State.String())
-		return
-	}
-
-	path := h.CTLPath + "/" + epUuid.String()
-
-	// Ensure the member is directory before proceeding
-	stat, xerr := os.Lstat(path)
-	if xerr != nil {
-		xlog.Infof("lstat(%s) failed: %s", path, xerr)
-		return
-	}
-	if !stat.IsDir() {
-		xlog.Infof("Path %s is not a directory", path)
-		return
-	}
-
-	// Create new object
-	ep := NcsiEP{
-		Uuid:        epUuid,
-		Path:        path,
-		LastReport:  time.Now(),
-		State:       EPstateInit,
-		pendingCmds: make(map[uuid.UUID]*epCommand),
-		App:         &applications.Unrecognized{},
-	}
-
-	if err := h.EpWatcher.Add(ep.Path + "/output"); err != nil {
-		xlog.Fatal("Watcher.Add() failed:", err)
-	}
-
-	h.Epc.UpdateEpMap(epUuid, &ep)
-
-	ep.Log(xlog.INFO, "incoming ep")
+	h.Epc.AddEp(h, epUuid)
 }
 
 func (h *LookoutHandler) init() error {

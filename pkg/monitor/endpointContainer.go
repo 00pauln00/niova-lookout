@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
@@ -95,11 +96,30 @@ func (epc *EPContainer) TakeSnapshot() map[uuid.UUID]*NcsiEP {
 	return nodeMap
 }
 
-func (epc *EPContainer) UpdateEpMap(uuid uuid.UUID, newlns *NcsiEP) {
+func (epc *EPContainer) AddEp(lh *LookoutHandler, epUuid uuid.UUID) {
 	epc.mutex.Lock()
 	defer epc.mutex.Unlock()
 
-	epc.epMap[uuid] = newlns
+	if epc.epMap[epUuid] != nil {
+		xlog.Warnf("ep-uuid=%s already present", epUuid.String())
+		return
+	}
+
+	// Create new object
+	ep := NcsiEP{
+		Uuid:        epUuid,
+		lh:          lh,
+		LastReport:  time.Now(),
+		State:       EPstateInit,
+		pendingCmds: make(map[uuid.UUID]*epCommand),
+		App:         &applications.Unrecognized{},
+	}
+
+	if err := lh.EpWatcher.Add(ep.Xpath(EP_PATH_OUTPUT)); err != nil {
+		ep.Log(xlog.ERROR, "Watcher.Add() failed, not adding:", err)
+	} else {
+		epc.epMap[epUuid] = &ep
+	}
 }
 
 func (epc *EPContainer) JsonMarshal(state Epstate) []byte {
