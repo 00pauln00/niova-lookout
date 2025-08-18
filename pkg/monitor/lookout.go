@@ -95,12 +95,12 @@ func (h *LookoutHandler) monitorLsof() {
 		panic("Invalid lookoutState")
 	}
 
-	sleepTime := 120 * time.Second
+	sleepTime := 60 * time.Second
 
 	for h.run == true {
-		//		h.lookoutLsof()
-
 		time.Sleep(sleepTime)
+
+		h.lookoutLsof()
 	}
 }
 
@@ -126,8 +126,6 @@ func (h *LookoutHandler) monitor() error {
 
 	xlog.Info("Lookout monitor sleep time: ", sleepTime)
 
-	lsofFreq := 3
-
 	for h.run == true {
 		h.Epc.PollEPs()
 
@@ -136,14 +134,6 @@ func (h *LookoutHandler) monitor() error {
 			xlog.Debug("enter RUNNING")
 			lookoutState = RUNNING
 		}
-
-		lsofFreq--
-
-		if lsofFreq == 0 {
-			h.lookoutLsof()
-			lsofFreq = 2
-		}
-
 		time.Sleep(sleepTime)
 	}
 
@@ -271,7 +261,8 @@ func (h *LookoutHandler) scan() {
 		}
 	}
 
-	h.lookoutLsof()
+	h.lookoutLsof() // Run the lsof scan to identify stale directories
+	//	h.purgeStale()
 }
 
 func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
@@ -306,11 +297,10 @@ func (h *LookoutHandler) init() error {
 
 	h.run = true
 
-	h.scan()        // Scan the ctl-interface directory
-	h.lookoutLsof() // Run the lsof scan to identify stale directories
-	//	h.purgeStale()
+	h.scan() // Scan the ctl-interface directory
 
 	go h.epOutputWatcher()
+	go h.monitorLsof()
 
 	return nil
 }
