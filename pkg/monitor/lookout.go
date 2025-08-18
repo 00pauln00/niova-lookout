@@ -4,7 +4,7 @@ import (
 	//	"fmt"
 	"io/ioutil"
 	"os"
-	//	"path/filepath"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -26,6 +26,7 @@ type LookoutHandler struct {
 	Statb     syscall.Stat_t
 	Epc       *EPContainer
 	EpWatcher *fsnotify.Watcher
+	lsofGen   uint64
 }
 
 type lookout_state int
@@ -43,6 +44,65 @@ func LookoutWaitUntilReady() {
 	for lookoutState != RUNNING {
 		xlog.Debug("waiting for RUNNING")
 		time.Sleep(1 * time.Second)
+	}
+}
+
+func (h *LookoutHandler) lookoutLsof() error {
+	procEntries, err := os.ReadDir("/proc")
+	if err != nil {
+		return err
+	}
+
+	h.lsofGen++
+
+	for _, e := range procEntries {
+		pid := e.Name()
+		if !e.IsDir() || pid[0] < '0' || pid[0] > '9' {
+			continue
+		}
+
+		fdDir := filepath.Join("/proc", pid, "fd")
+		fds, err := os.ReadDir(fdDir)
+		if err != nil {
+			continue // probably not accessible
+		}
+
+		for _, fd := range fds {
+			lnk, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
+
+			if err != nil {
+				continue
+			}
+
+			if !strings.HasPrefix(lnk, h.CTLPath) {
+				continue
+			}
+
+			dir := filepath.Dir(lnk)   // /tmp/.niova/<uuid>/input
+			base := filepath.Base(dir) // <uuid>
+			if u, err := uuid.Parse(base); err == nil {
+				xlog.Warnf("found %s", lnk)
+
+				// Try to find the endpoint at this uuid
+				h.Epc.LsofGenUpdate(u, h.lsofGen)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (h *LookoutHandler) monitorLsof() {
+	if lookoutState != BOOTING {
+		panic("Invalid lookoutState")
+	}
+
+	sleepTime := 120 * time.Second
+
+	for h.run == true {
+		//		h.lookoutLsof()
+
+		time.Sleep(sleepTime)
 	}
 }
 
@@ -68,6 +128,8 @@ func (h *LookoutHandler) monitor() error {
 
 	xlog.Info("Lookout monitor sleep time: ", sleepTime)
 
+	lsofFreq := 3
+
 	for h.run == true {
 		h.Epc.PollEPs()
 
@@ -75,6 +137,13 @@ func (h *LookoutHandler) monitor() error {
 		if lookoutState == BOOTING {
 			xlog.Debug("enter RUNNING")
 			lookoutState = RUNNING
+		}
+
+		lsofFreq--
+
+		if lsofFreq == 0 {
+			h.lookoutLsof()
+			lsofFreq = 2
 		}
 
 		time.Sleep(sleepTime)
@@ -203,6 +272,8 @@ func (h *LookoutHandler) scan() {
 			}
 		}
 	}
+
+	h.lookoutLsof()
 }
 
 func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
@@ -237,9 +308,11 @@ func (h *LookoutHandler) init() error {
 
 	h.run = true
 
-	go h.epOutputWatcher()
+	h.scan()        // Scan the ctl-interface directory
+	h.lookoutLsof() // Run the lsof scan to identify stale directories
+	//	h.purgeStale()
 
-	h.scan()
+	go h.epOutputWatcher()
 
 	return nil
 }

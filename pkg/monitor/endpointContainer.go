@@ -80,6 +80,23 @@ func (epc *EPContainer) Process(epUuid uuid.UUID, cmdUuid uuid.UUID) {
 	}
 }
 
+func (epc *EPContainer) LsofGenUpdate(epUuid uuid.UUID, gen uint64) {
+	p := epc.Lookup(epUuid)
+	if p == nil {
+		return
+	}
+
+	if p.lsofGen > gen {
+		p.Log(xlog.FATAL, "ep_gen is > %u", gen)
+
+	} else if p.lsofGen == gen {
+		return
+	}
+
+	p.lsofGen = gen
+	p.Log(xlog.INFO, "update lsofGen")
+}
+
 func (epc *EPContainer) Lookup(node uuid.UUID) *NcsiEP {
 	epc.mutex.Lock()
 	defer epc.mutex.Unlock()

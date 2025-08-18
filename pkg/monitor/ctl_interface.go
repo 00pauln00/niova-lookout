@@ -73,6 +73,7 @@ type NcsiEP struct {
 	pendingCmds  map[uuid.UUID]*epCommand `json:"-"`
 	Mutex        sync.Mutex               `json:"-"`
 	lh           *LookoutHandler          `json:"-"`
+	lsofGen      uint64                   `json:"-"`
 }
 
 func (ep *NcsiEP) ChangeState(s Epstate) {
@@ -263,13 +264,14 @@ func (ep *NcsiEP) update(ctlData applications.CtlIfOut) {
 func (ep *NcsiEP) LogWithDepth(level int, depth int, format string,
 	args ...interface{}) {
 	// Common prefix fields
-	prefixFormat := "%s@%s s=%s pc=%d age=%s"
+	prefixFormat := "%s@%s s=%s pc=%d age=%s lg=%d"
 	prefixArgs := []interface{}{
 		ep.App.GetAppName(),
 		ep.Uuid.String(),
 		ep.State.String(),
 		len(ep.pendingCmds),
 		time.Since(ep.LastReport).Truncate(time.Millisecond),
+		ep.lsofGen,
 	}
 
 	var combinedFmt string
