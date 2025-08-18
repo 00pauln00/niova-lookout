@@ -191,6 +191,18 @@ func (ep *NcsiEP) Xpath(p EpPath) string {
 	return path
 }
 
+func (ep *NcsiEP) LsofGenUpdate(gen uint64) {
+	if ep.lsofGen > gen {
+		ep.Log(xlog.FATAL, "ep_gen is > %d", gen)
+
+	} else if ep.lsofGen == gen {
+		return
+	}
+
+	ep.lsofGen = gen
+	ep.LogWithDepth(xlog.INFO, 1, "update lsofGen")
+}
+
 func (ep *NcsiEP) mayQueueCmd() bool {
 	ep.Log(xlog.DEBUG, "")
 

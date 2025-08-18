@@ -81,10 +81,8 @@ func (h *LookoutHandler) lookoutLsof() error {
 			dir := filepath.Dir(lnk)   // /tmp/.niova/<uuid>/input
 			base := filepath.Base(dir) // <uuid>
 			if u, err := uuid.Parse(base); err == nil {
-				xlog.Warnf("found %s", lnk)
-
 				// Try to find the endpoint at this uuid
-				h.Epc.LsofGenUpdate(u, h.lsofGen)
+				h.Epc.LsofGenAddOrUpdateEp(h, u)
 			}
 		}
 	}

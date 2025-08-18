@@ -80,23 +80,6 @@ func (epc *EPContainer) Process(epUuid uuid.UUID, cmdUuid uuid.UUID) {
 	}
 }
 
-func (epc *EPContainer) LsofGenUpdate(epUuid uuid.UUID, gen uint64) {
-	p := epc.Lookup(epUuid)
-	if p == nil {
-		return
-	}
-
-	if p.lsofGen > gen {
-		p.Log(xlog.FATAL, "ep_gen is > %u", gen)
-
-	} else if p.lsofGen == gen {
-		return
-	}
-
-	p.lsofGen = gen
-	p.Log(xlog.INFO, "update lsofGen")
-}
-
 func (epc *EPContainer) Lookup(node uuid.UUID) *NcsiEP {
 	epc.mutex.Lock()
 	defer epc.mutex.Unlock()
@@ -113,13 +96,14 @@ func (epc *EPContainer) TakeSnapshot() map[uuid.UUID]*NcsiEP {
 	return nodeMap
 }
 
-func (epc *EPContainer) AddEp(lh *LookoutHandler, epUuid uuid.UUID) {
+func (epc *EPContainer) AddEp(lh *LookoutHandler, epUuid uuid.UUID) bool {
 	epc.mutex.Lock()
 	defer epc.mutex.Unlock()
 
-	if epc.epMap[epUuid] != nil {
-		xlog.Warnf("ep-uuid=%s already present", epUuid.String())
-		return
+	// Update the Gen regardless
+	if xep := epc.epMap[epUuid]; xep != nil {
+		xep.LsofGenUpdate(lh.lsofGen)
+		return false
 	}
 
 	// Create new object
@@ -130,6 +114,7 @@ func (epc *EPContainer) AddEp(lh *LookoutHandler, epUuid uuid.UUID) {
 		State:       EPstateInit,
 		pendingCmds: make(map[uuid.UUID]*epCommand),
 		App:         &applications.Unrecognized{},
+		lsofGen:     lh.lsofGen,
 	}
 
 	if err := lh.EpWatcher.Add(ep.Xpath(EP_PATH_OUTPUT)); err != nil {
@@ -137,6 +122,16 @@ func (epc *EPContainer) AddEp(lh *LookoutHandler, epUuid uuid.UUID) {
 	} else {
 		epc.epMap[epUuid] = &ep
 	}
+
+	return true
+}
+
+func (epc *EPContainer) LsofGenAddOrUpdateEp(lh *LookoutHandler,
+	epUuid uuid.UUID) {
+
+	addedHere := epc.AddEp(lh, epUuid)
+
+	xlog.Debugf("%s: added here? %v", epUuid.String(), addedHere)
 }
 
 func (epc *EPContainer) JsonMarshal(state Epstate) []byte {
