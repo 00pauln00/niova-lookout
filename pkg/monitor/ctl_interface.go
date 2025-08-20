@@ -244,6 +244,14 @@ func (ep *NcsiEP) ChangeState(s Epstate) {
 		switch s {
 		case EPstateRemoving:
 			ep.flushCmds()
+		case EPstateDown:
+			ep.flushCmds()
+		case EPstateInit:
+			ep.LastReport = time.Now()
+		case EPstateRunning:
+			ep.LastReport = time.Now()
+		case EPstateHasIdentity:
+			ep.LastReport = time.Now()
 		}
 
 		ep.LogWithDepth(xlog.WARN, 1, "old-state=%s", old.String())
