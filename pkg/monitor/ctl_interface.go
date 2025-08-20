@@ -486,8 +486,10 @@ func (ep *NcsiEP) removeFiles(folder string) {
 }
 
 func (ep *NcsiEP) RemoveStaleFiles() {
-	ep.removeFiles(ep.Xpath(EP_PATH_INPUT))
-	ep.removeFiles(ep.Xpath(EP_PATH_OUTPUT))
+	if isWatchedState(ep.State) {
+		ep.removeFiles(ep.Xpath(EP_PATH_INPUT))
+		ep.removeFiles(ep.Xpath(EP_PATH_OUTPUT))
+	}
 }
 
 // Called every sleep time (default 20 seconds) to check if the endpoint is alive
