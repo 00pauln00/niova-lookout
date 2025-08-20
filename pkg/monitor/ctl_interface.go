@@ -65,11 +65,11 @@ func (s Epstate) String() string {
 
 type NcsiEP struct {
 	App          applications.AppIF       `json:"-"`
-	Uuid         uuid.UUID                `json:"-"`
+	Uuid         uuid.UUID                `json:"uuid"`
 	Name         string                   `json:"name"`
 	NiovaSvcType string                   `json:"type"`
 	Port         int                      `json:"port"`
-	lastReport   time.Time                `json:"-"`
+	LastSeen     time.Time                `json:"last_seen"`
 	State        Epstate                  `json:"state"`
 	EPInfo       applications.CtlIfOut    `json:"ep_info"` //May need to change this to a pointer
 	pendingCmds  map[uuid.UUID]*epCommand `json:"-"`
@@ -250,11 +250,11 @@ func (ep *NcsiEP) ChangeState(s Epstate) {
 
 		switch s {
 		case EPstateInit:
-			ep.lastReport = time.Now()
+			ep.LastSeen = time.Now()
 		case EPstateRunning:
-			ep.lastReport = time.Now()
+			ep.LastSeen = time.Now()
 		case EPstateHasIdentity:
-			ep.lastReport = time.Now()
+			ep.LastSeen = time.Now()
 		}
 
 		ep.LogWithDepth(xlog.WARN, 1, "old-state=%s", old.String())
@@ -300,8 +300,8 @@ func (ep *NcsiEP) LsofGenIsStale() bool {
 	return false
 }
 
-func (ep *NcsiEP) LastReportIsStale() bool {
-	if time.Since(ep.lastReport) > time.Second*EPtimeoutSec {
+func (ep *NcsiEP) LastSeenIsStale() bool {
+	if time.Since(ep.LastSeen) > time.Second*EPtimeoutSec {
 		return true
 	}
 	return false
@@ -357,7 +357,7 @@ func (ep *NcsiEP) removeCmd(cmdUUID uuid.UUID, force bool) *epCommand {
 func (ep *NcsiEP) update(ctlData applications.CtlIfOut) {
 	ep.App.SetCtlIfOut(ctlData)
 	ep.EPInfo = ep.App.GetCtlIfOut()
-	ep.lastReport = time.Now()
+	ep.LastSeen = time.Now()
 
 	if ep.State != EPstateRunning {
 		ep.ChangeState(EPstateRunning)
@@ -373,7 +373,7 @@ func (ep *NcsiEP) LogWithDepth(level int, depth int, format string,
 		ep.Uuid.String(),
 		ep.State.String(),
 		len(ep.pendingCmds),
-		time.Since(ep.lastReport).Truncate(time.Millisecond),
+		time.Since(ep.LastSeen).Truncate(time.Millisecond),
 		ep.lsofGen,
 	}
 
@@ -456,6 +456,13 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 
 		if err == nil {
 			ep.App.SetUUID(ep.Uuid)
+			ep.NiovaSvcType = ep.App.GetAppName()
+			ep.Name = ep.App.GetAltName()
+			if ep.Name == "" {
+				ep.Name = ep.NiovaSvcType + "-" +
+					ep.Uuid.String()[:6]
+			}
+
 			ep.ChangeState(EPstateHasIdentity)
 			ep.queryApp()
 		} else {
@@ -542,7 +549,7 @@ func (ep *NcsiEP) Poll() error {
 		}
 
 		err = ep.queryApp()
-		if time.Since(ep.lastReport) > time.Second*EPtimeoutSec {
+		if time.Since(ep.LastSeen) > time.Second*EPtimeoutSec {
 			xlog.Debugf("Endpoint %s timed out\n", ep.Uuid)
 			if ep.State == EPstateRunning {
 				ep.ChangeState(EPstateDown)
@@ -550,7 +557,7 @@ func (ep *NcsiEP) Poll() error {
 		}
 	case EPstateDown:
 		//see if app came back up every 60 seconds
-		if time.Since(ep.lastReport) > time.Second*EPtimeoutSec {
+		if time.Since(ep.LastSeen) > time.Second*EPtimeoutSec {
 			err = ep.queryApp()
 		}
 	default:
@@ -570,6 +577,5 @@ func (ep *NcsiEP) queryApp() error {
 		cmd.submit()
 		return cmd.err
 	}
-	ep.Name = ep.App.GetAltName()
 	return err
 }

@@ -51,7 +51,7 @@ func (epc *EPContainer) CleanEPs() {
 		ep.flushStaleCmds()
 		ep.RemoveStaleFiles()
 
-		if ep.State == EPstateRunning && ep.LastReportIsStale() {
+		if ep.State == EPstateRunning && ep.LastSeenIsStale() {
 			ep.ChangeState(EPstateDown)
 
 		} else if ep.LsofGenIsStale() {
