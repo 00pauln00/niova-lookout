@@ -44,8 +44,8 @@ func (handler *handler) parseCMDArgs() {
 	showHelpShort = flag.Bool("h", false, "")
 	showHelp = flag.Bool("help", false, "print help")
 
-	logLevel = flag.String("log", "info",
-		"set log level (panic, fatal, error, warn, info, debug, trace)")
+	logLevel = flag.String("log", "warn",
+		"set log level (error, warn, info, debug, trace)")
 
 	flag.BoolVar(&handler.standalone, "std", false,
 		"Set flag to true to run lookout standalone for NISD")
