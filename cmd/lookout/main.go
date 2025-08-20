@@ -114,11 +114,11 @@ func main() {
 	var portAddr *int
 	var err error
 
-	//Get cmd line args
-	handler.parseCMDArgs()
-
 	//Initialize communication handler
 	handler.coms = communication.CommHandler{}
+
+	//Get cmd line args
+	handler.parseCMDArgs()
 
 	if handler.coms.GossipNodesPath != "" {
 		err = handler.coms.LoadConfigInfo()
