@@ -519,7 +519,7 @@ func (ep *NcsiEP) RemoveStaleFiles() {
 }
 
 // Called every sleep time (default 20 seconds) to check if the endpoint is alive
-func (ep *NcsiEP) Detect() error {
+func (ep *NcsiEP) Poll() error {
 	var err error
 
 	switch ep.State {

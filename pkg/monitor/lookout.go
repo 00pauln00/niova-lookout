@@ -127,8 +127,8 @@ func (h *LookoutHandler) monitor() error {
 	xlog.Info("Lookout monitor sleep time: ", sleepTime)
 
 	for h.run == true {
-		h.Epc.PollEPs()
 		h.Epc.CleanEPs()
+		h.Epc.PollEPs()
 
 		// Perform one endpoint poll before entering RUNNING mode
 		if lookoutState == BOOTING {

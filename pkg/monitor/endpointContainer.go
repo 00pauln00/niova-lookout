@@ -65,24 +65,20 @@ func (epc *EPContainer) CleanEPs() {
 			} else {
 				ep.ChangeState(EPstateRemoving)
 			}
-
 		}
 	}
 }
 
-// XXX this should not just blast through them, it should try to use the entire
-// timeout period
+// At some point we may want to issue the cmds to a priority heap so their
+// submission can be spread out over time
 func (epc *EPContainer) PollEPs() {
 	epc.mutex.Lock()
 	defer epc.mutex.Unlock()
 
 	for _, ep := range epc.epMap {
-		// only check liveness for local EPs
-		ep.RemoveStaleFiles()
-
-		err := ep.Detect()
+		err := ep.Poll()
 		if err != nil {
-			xlog.Error("ep.Detect(): ", err)
+			xlog.Error("ep.Poll(): ", err)
 		}
 	}
 }
