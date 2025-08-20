@@ -47,8 +47,15 @@ func (epc *EPContainer) CleanEPs() {
 
 	for _, ep := range epc.epMap {
 
-		if ep.State == EPstateRunning && ep.LastReportIsStale() {
-			ep.ChangeState(EPstateDown)
+		// Flush all expired cmds
+		ep.flushStaleCmds()
+		ep.RemoveStaleFiles()
+
+		if ep.LastReportIsStale() {
+			switch ep.State {
+			case EPstateRunning:
+				ep.ChangeState(EPstateDown)
+			}
 
 		} else if ep.LsofGenIsStale() {
 			// Items that eligible for Removing state

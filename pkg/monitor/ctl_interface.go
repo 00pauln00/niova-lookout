@@ -86,6 +86,7 @@ type epCommand struct {
 	outJSON []byte
 	err     error
 	op      applications.EPcmdType
+	start   time.Time
 }
 
 type EpPath string
@@ -149,6 +150,12 @@ func (c *epCommand) prep() {
 	c.ep.addCmd(c)
 }
 
+func (c *epCommand) cmdIsStale() bool {
+	if time.Since(c.start) > time.Second*EPtimeoutSec {
+		return true
+	}
+	return false
+}
 func (c *epCommand) write() {
 }
 
@@ -242,10 +249,6 @@ func (ep *NcsiEP) ChangeState(s Epstate) {
 		ep.State = s
 
 		switch s {
-		case EPstateRemoving:
-			ep.flushCmds()
-		case EPstateDown:
-			ep.flushCmds()
 		case EPstateInit:
 			ep.lastReport = time.Now()
 		case EPstateRunning:
@@ -278,11 +281,16 @@ func (ep *NcsiEP) LsofGenUpdate(gen uint64) {
 	ep.LogWithDepth(xlog.INFO, 1, "update lsofGen")
 }
 
-func (ep *NcsiEP) flushCmds() {
+func (ep *NcsiEP) flushStaleCmds() {
 	for x := range ep.pendingCmds {
-		ep.removeCmd(x)
+		ep.removeCmd(x, false)
 	}
+}
 
+func (ep *NcsiEP) flushAllCmds() {
+	for x := range ep.pendingCmds {
+		ep.removeCmd(x, true)
+	}
 }
 
 func (ep *NcsiEP) LsofGenIsStale() bool {
@@ -312,6 +320,7 @@ func (ep *NcsiEP) addCmd(cmd *epCommand) error {
 	cmd.ep.Mutex.Lock()
 	_, exists := cmd.ep.pendingCmds[cmd.id]
 	if exists == false {
+		cmd.start = time.Now()
 		cmd.ep.pendingCmds[cmd.id] = cmd
 	}
 	cmd.ep.Mutex.Unlock()
@@ -323,12 +332,15 @@ func (ep *NcsiEP) addCmd(cmd *epCommand) error {
 	return nil
 }
 
-func (ep *NcsiEP) removeCmd(cmdUUID uuid.UUID) *epCommand {
+func (ep *NcsiEP) removeCmd(cmdUUID uuid.UUID, force bool) *epCommand {
 	ep.Mutex.Lock()
 	c, ok := ep.pendingCmds[cmdUUID]
 	if ok {
-		delete(ep.pendingCmds, cmdUUID)
-		ep.Log(xlog.INFO, "removed cmd %s", cmdUUID.String())
+		if force || c.cmdIsStale() {
+			delete(ep.pendingCmds, cmdUUID)
+			ep.Log(xlog.INFO, "removed cmd %s (force=%v)",
+				cmdUUID.String(), force)
+		}
 	}
 	ep.Mutex.Unlock()
 
@@ -390,7 +402,7 @@ func (ep *NcsiEP) Log(level int, format string, args ...interface{}) {
 }
 
 func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
-	c := ep.removeCmd(cmdUuid)
+	c := ep.removeCmd(cmdUuid, true)
 	if c == nil {
 		return syscall.ENOENT
 	}
