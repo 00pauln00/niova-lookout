@@ -411,7 +411,11 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 	switch c.op {
 	case applications.SystemInfoOp:
 		fallthrough
+	case applications.NCLIENTInfoOp:
+		fallthrough
 	case applications.NISDInfoOp:
+		ep.Log(xlog.DEBUG, "op=%d", c.op)
+
 		var err error
 		var ctlifout applications.CtlIfOut
 		if err = json.Unmarshal(c.getOutJSON(), &ctlifout); err != nil {
@@ -436,6 +440,8 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 
 	case applications.IdentifyOp:
 		ep.App, err = applications.DetermineApp(c.getOutJSON())
+
+		ep.Log(xlog.DEBUG, "IdentifyOp")
 
 		if err == nil {
 			ep.App.SetUUID(ep.Uuid)
