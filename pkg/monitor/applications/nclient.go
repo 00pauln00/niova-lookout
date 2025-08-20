@@ -16,14 +16,15 @@ type Nclient struct {
 type NclientInfo struct {
 	VdevUUID            string    `json:"vdev-uuid"`
 	Status              string    `json:"status"`
-	QueueDepth          int       `json:"queue-depth" type:"gauge" metric:"nclient_queue_depth"`
-	VblksRpRead         int       `json:"vblks-rp-read" type:"counter" metric:"nclient_vblks_rp_read"`
-	VblksRpWrite        int       `json:"vblks-rp-write" type:"counter" metric:"nclient_vblks_rp_write"`
-	VblksEcRead         int       `json:"vblks-ec-read" type:"counter" metric:"nclient_vblks_ec_read"`
-	VblksEcWrite        int       `json:"vblks-ec-write" type:"counter" metric:"nclient_vblks_ec_write"`
-	VblksS3Read         int       `json:"vblks-s3-read" type:"counter" metric:"nclient_vblks_s3_read"`
-	VblksHoleRead       int       `json:"vblks-hole-read" type:"counter" metric:"nclient_vblks_hole_read"`
-	VblksRpRedirectRead int       `json:"vblks-rp-redirect-read" type:"counter" metric:"nclient_vblks_rp_redirect_read"`
+	BuildId             string    `json:"build-id"`
+	QueueDepth          uint64    `json:"queue-depth" type:"gauge" metric:"nclient_queue_depth"`
+	VblksRpRead         uint64    `json:"vblks-rp-read" type:"counter" metric:"nclient_vblks_rp_read"`
+	VblksRpWrite        uint64    `json:"vblks-rp-write" type:"counter" metric:"nclient_vblks_rp_write"`
+	VblksEcRead         uint64    `json:"vblks-ec-read" type:"counter" metric:"nclient_vblks_ec_read"`
+	VblksEcWrite        uint64    `json:"vblks-ec-write" type:"counter" metric:"nclient_vblks_ec_write"`
+	VblksS3Read         uint64    `json:"vblks-s3-read" type:"counter" metric:"nclient_vblks_s3_read"`
+	VblksHoleRead       uint64    `json:"vblks-hole-read" type:"counter" metric:"nclient_vblks_hole_read"`
+	VblksRpRedirectRead uint64    `json:"vblks-rp-redirect-read" type:"counter" metric:"nclient_vblks_rp_redirect_read"`
 	RpReadSize          Histogram `json:"rp-read-size" type:"histogram" metric:"nclient_rp_read_size"`
 	RpWriteSize         Histogram `json:"rp-write-size" type:"histogram" metric:"nclient_rp_write_size"`
 	EcReadSize          Histogram `json:"ec-read-size" type:"histogram" metric:"nclient_ec_read_size"`
@@ -70,7 +71,6 @@ func (n *Nclient) Parse(labels map[string]string, w http.ResponseWriter,
 
 func (n *Nclient) SetCtlIfOut(c CtlIfOut) {
 	n.EPInfo.Nclient = c.Nclient
-	n.EPInfo.NISD = c.NISD // XXX is this right?
 	n.EPInfo.SysInfo = c.SysInfo
 }
 

@@ -23,13 +23,13 @@ type SystemInfo struct {
 	UtsMachine              string    `json:"uts.machine"`
 	RusageUserCPUTimeUsed   float64   `json:"rusage.user_cpu_time_used" type:"gauge" metric:"SYSINFO_user_cpu_time"`
 	RusageSystemCPUTimeUsed float64   `json:"rusage.system_cpu_time_used" type:"gauge" metric:"SYSINFO_sys_cpu_time"`
-	RusageMaxRss            int       `json:"rusage.max_rss" type:"counter" metric:"SYSINFO_max_rss"`
-	RusageMinFault          int       `json:"rusage.min_fault" type:"counter" metric:"SYSINFO_min_fault"`
-	RusageMajFault          int       `json:"rusage.maj_fault" type:"counter" metric:"SYSINFO_maj_fault"`
-	RusageInBlock           int       `json:"rusage.in_block" type:"counter" metric:"SYSINFO_in_block_usage"`
-	RusageOutBlock          int       `json:"rusage.out_block" type:"counter" metric:"SYSINFO_out_block_usage"`
-	RusageVolCtsw           int       `json:"rusage.vol_ctsw" type:"gauge" metric:"SYSINFO_vol_ctsw"`
-	RusageInvolCtsw         int       `json:"rusage.invol_ctsw" type:"gauge" metric:"SYSINFO_in_vol_ctsw"`
+	RusageMaxRss            uint64    `json:"rusage.max_rss" type:"counter" metric:"SYSINFO_max_rss"`
+	RusageMinFault          uint64    `json:"rusage.min_fault" type:"counter" metric:"SYSINFO_min_fault"`
+	RusageMajFault          uint64    `json:"rusage.maj_fault" type:"counter" metric:"SYSINFO_maj_fault"`
+	RusageInBlock           uint64    `json:"rusage.in_block" type:"counter" metric:"SYSINFO_in_block_usage"`
+	RusageOutBlock          uint64    `json:"rusage.out_block" type:"counter" metric:"SYSINFO_out_block_usage"`
+	RusageVolCtsw           uint64    `json:"rusage.vol_ctsw" type:"gauge" metric:"SYSINFO_vol_ctsw"`
+	RusageInvolCtsw         uint64    `json:"rusage.invol_ctsw" type:"gauge" metric:"SYSINFO_in_vol_ctsw"`
 }
 
 func (s *Syst) LoadSystemInfo(labelMap map[string]string) map[string]string {
