@@ -48,14 +48,19 @@ func (epc *EPContainer) CleanEPs() {
 	defer epc.mutex.Unlock()
 
 	for _, ep := range epc.epMap {
-		// Check for items that eligible for Removing state
-		if ep.lsofGen+1 < ep.lh.lsofGen {
+
+		if ep.State == EPstateRunning && ep.LastReportIsStale() {
+			ep.ChangeState(EPstateDown)
+
+		} else if ep.LsofGenIsStale() {
+			// Items that eligible for Removing state
 			if ep.State == EPstateRunning {
 				ep.Log(xlog.WARN,
 					"running ep has expired lsof gen")
 			} else {
 				ep.ChangeState(EPstateRemoving)
 			}
+
 		}
 	}
 }

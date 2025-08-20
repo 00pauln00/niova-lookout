@@ -285,27 +285,26 @@ func (ep *NcsiEP) flushCmds() {
 
 }
 
-func (ep *NcsiEP) mayQueueCmd() bool {
-	ep.Log(xlog.DEBUG, "")
-
-	// Enforces a max queue depth of 1 for internal scheduling logic,
-	// while still allowing externally-triggered commands (e.g., via /v1/)
-	// to be processed.
-	if len(ep.pendingCmds) > 0 {
-		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
-			xlog.Debugf("ep %s has stale cmds (%f seconds), removing them from the queue",
-				ep.Uuid, EPtimeoutSec)
-
-			ep.flushCmds()
-
-			if ep.State == EPstateInit {
-				ep.ChangeState(EPstateRemoving)
-			} else {
-				ep.ChangeState(EPstateDown)
-			}
-		}
+func (ep *NcsiEP) LsofGenIsStale() bool {
+	if ep.lsofGen+1 < ep.lh.lsofGen {
+		return true
 	}
-	return len(ep.pendingCmds) == 0
+	return false
+}
+
+func (ep *NcsiEP) LastReportIsStale() bool {
+	if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
+		return true
+	}
+	return false
+}
+
+func (ep *NcsiEP) mayQueueCmd() bool {
+	qok := len(ep.pendingCmds) == 0
+
+	ep.Log(xlog.DEBUG, "mayQueue=%v", qok)
+
+	return qok
 }
 
 func (ep *NcsiEP) addCmd(cmd *epCommand) error {
