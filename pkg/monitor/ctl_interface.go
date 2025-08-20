@@ -234,13 +234,17 @@ func (ep *NcsiEP) ChangeState(s Epstate) {
 	}
 
 	if s != ep.State {
-
 		old := ep.State
 
 		ep.ensureWatchedState()
-
 		ep.watchCtl(s)
+
 		ep.State = s
+
+		switch s {
+		case EPstateRemoving:
+			ep.flushCmds()
+		}
 
 		ep.LogWithDepth(xlog.WARN, 1, "old-state=%s", old.String())
 	}
@@ -266,6 +270,13 @@ func (ep *NcsiEP) LsofGenUpdate(gen uint64) {
 	ep.LogWithDepth(xlog.INFO, 1, "update lsofGen")
 }
 
+func (ep *NcsiEP) flushCmds() {
+	for x := range ep.pendingCmds {
+		ep.removeCmd(x)
+	}
+
+}
+
 func (ep *NcsiEP) mayQueueCmd() bool {
 	ep.Log(xlog.DEBUG, "")
 
@@ -277,9 +288,7 @@ func (ep *NcsiEP) mayQueueCmd() bool {
 			xlog.Debugf("ep %s has stale cmds (%f seconds), removing them from the queue",
 				ep.Uuid, EPtimeoutSec)
 
-			for x := range ep.pendingCmds {
-				ep.removeCmd(x)
-			}
+			ep.flushCmds()
 
 			if ep.State == EPstateInit {
 				ep.ChangeState(EPstateRemoving)
