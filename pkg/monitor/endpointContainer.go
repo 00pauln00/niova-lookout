@@ -20,6 +20,7 @@ type EPContainer struct {
 	HttpQuery        map[string](chan []byte)
 }
 
+//XXX this looks sketchy
 func (epc *EPContainer) GetList() map[uuid.UUID]*NcsiEP {
 	epc.mutex.Lock()
 	defer epc.mutex.Unlock()
@@ -164,7 +165,7 @@ func (epc *EPContainer) JsonMarshal(state Epstate) []byte {
 		filtered := make(map[uuid.UUID]*NcsiEP)
 		for k, v := range epc.epMap {
 			if v.State == state {
-				xlog.Debug("Adding ep: ", v)
+				v.Log(xlog.TRACE, "including in http reply")
 				filtered[k] = v
 			}
 		}
