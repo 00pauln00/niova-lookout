@@ -69,7 +69,7 @@ type NcsiEP struct {
 	Name         string                   `json:"name"`
 	NiovaSvcType string                   `json:"type"`
 	Port         int                      `json:"port"`
-	LastReport   time.Time                `json:"-"`
+	lastReport   time.Time                `json:"-"`
 	State        Epstate                  `json:"state"`
 	EPInfo       applications.CtlIfOut    `json:"ep_info"` //May need to change this to a pointer
 	pendingCmds  map[uuid.UUID]*epCommand `json:"-"`
@@ -247,11 +247,11 @@ func (ep *NcsiEP) ChangeState(s Epstate) {
 		case EPstateDown:
 			ep.flushCmds()
 		case EPstateInit:
-			ep.LastReport = time.Now()
+			ep.lastReport = time.Now()
 		case EPstateRunning:
-			ep.LastReport = time.Now()
+			ep.lastReport = time.Now()
 		case EPstateHasIdentity:
-			ep.LastReport = time.Now()
+			ep.lastReport = time.Now()
 		}
 
 		ep.LogWithDepth(xlog.WARN, 1, "old-state=%s", old.String())
@@ -293,7 +293,7 @@ func (ep *NcsiEP) LsofGenIsStale() bool {
 }
 
 func (ep *NcsiEP) LastReportIsStale() bool {
-	if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
+	if time.Since(ep.lastReport) > time.Second*EPtimeoutSec {
 		return true
 	}
 	return false
@@ -345,7 +345,7 @@ func (ep *NcsiEP) removeCmd(cmdUUID uuid.UUID) *epCommand {
 func (ep *NcsiEP) update(ctlData applications.CtlIfOut) {
 	ep.App.SetCtlIfOut(ctlData)
 	ep.EPInfo = ep.App.GetCtlIfOut()
-	ep.LastReport = time.Now()
+	ep.lastReport = time.Now()
 
 	if ep.State != EPstateRunning {
 		ep.ChangeState(EPstateRunning)
@@ -361,7 +361,7 @@ func (ep *NcsiEP) LogWithDepth(level int, depth int, format string,
 		ep.Uuid.String(),
 		ep.State.String(),
 		len(ep.pendingCmds),
-		time.Since(ep.LastReport).Truncate(time.Millisecond),
+		time.Since(ep.lastReport).Truncate(time.Millisecond),
 		ep.lsofGen,
 	}
 
@@ -530,7 +530,7 @@ func (ep *NcsiEP) Detect() error {
 		}
 
 		err = ep.queryApp()
-		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
+		if time.Since(ep.lastReport) > time.Second*EPtimeoutSec {
 			xlog.Debugf("Endpoint %s timed out\n", ep.Uuid)
 			if ep.State == EPstateRunning {
 				ep.ChangeState(EPstateDown)
@@ -538,7 +538,7 @@ func (ep *NcsiEP) Detect() error {
 		}
 	case EPstateDown:
 		//see if app came back up every 60 seconds
-		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
+		if time.Since(ep.lastReport) > time.Second*EPtimeoutSec {
 			err = ep.queryApp()
 		}
 	default:

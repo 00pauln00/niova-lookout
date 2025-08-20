@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -38,7 +37,6 @@ func (epc *EPContainer) MarkAlive(serviceUUID string) error {
 		svc.pendingCmds = make(map[uuid.UUID]*epCommand)
 
 		svc.ChangeState(EPstateRunning)
-		svc.LastReport = time.Now()
 	}
 	return nil
 }
@@ -153,7 +151,6 @@ func (epc *EPContainer) AddEp(lh *LookoutHandler, epUuid uuid.UUID) bool {
 	ep := NcsiEP{
 		Uuid:        epUuid,
 		lh:          lh,
-		LastReport:  time.Now(),
 		State:       EPstateUnknown,
 		pendingCmds: make(map[uuid.UUID]*epCommand),
 		App:         &applications.Unrecognized{},
