@@ -79,6 +79,10 @@ type NcsiEP struct {
 	watched      bool                     `json:"-"`
 }
 
+func (s Epstate) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String()) // assuming Epstate has a String() method
+}
+
 type epCommand struct {
 	ep      *NcsiEP
 	cmd     string
