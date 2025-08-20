@@ -128,6 +128,7 @@ func (h *LookoutHandler) monitor() error {
 
 	for h.run == true {
 		h.Epc.PollEPs()
+		h.Epc.CleanEPs()
 
 		// Perform one endpoint poll before entering RUNNING mode
 		if lookoutState == BOOTING {

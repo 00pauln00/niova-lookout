@@ -43,9 +43,29 @@ func (epc *EPContainer) MarkAlive(serviceUUID string) error {
 	return nil
 }
 
+func (epc *EPContainer) CleanEPs() {
+	epc.mutex.Lock()
+	defer epc.mutex.Unlock()
+
+	for _, ep := range epc.epMap {
+		// Check for items that eligible for Removing state
+		if ep.lsofGen+1 < ep.lh.lsofGen {
+			if ep.State == EPstateRunning {
+				ep.Log(xlog.WARN,
+					"running ep has expired lsof gen")
+			} else {
+				ep.ChangeState(EPstateRemoving)
+			}
+		}
+	}
+}
+
 // XXX this should not just blast through them, it should try to use the entire
 // timeout period
 func (epc *EPContainer) PollEPs() {
+	epc.mutex.Lock()
+	defer epc.mutex.Unlock()
+
 	for _, ep := range epc.epMap {
 		// only check liveness for local EPs
 		ep.RemoveStaleFiles()
