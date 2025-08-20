@@ -103,6 +103,24 @@ func (epc *EPContainer) AddEp(lh *LookoutHandler, epUuid uuid.UUID) bool {
 	// Update the Gen regardless
 	if xep := epc.epMap[epUuid]; xep != nil {
 		xep.LsofGenUpdate(lh.lsofGen)
+
+		var newState = xep.State
+
+		// Note that ep's which are down but are still detected by lsof
+		// will be held in the down position.  The can be brought back
+		// to 'running' via Poll
+		switch xep.State {
+		case EPstateRemoving:
+			newState = EPstateInit
+		case EPstateUnknown:
+			newState = EPstateInit
+		default:
+		}
+
+		if newState != xep.State {
+			xep.ChangeState(newState)
+		}
+
 		return false
 	}
 
@@ -117,11 +135,9 @@ func (epc *EPContainer) AddEp(lh *LookoutHandler, epUuid uuid.UUID) bool {
 		lsofGen:     lh.lsofGen,
 	}
 
-	if err := lh.EpWatcher.Add(ep.Xpath(EP_PATH_OUTPUT)); err != nil {
-		ep.Log(xlog.ERROR, "Watcher.Add() failed, not adding:", err)
-	} else {
-		epc.epMap[epUuid] = &ep
-	}
+	ep.watchCtl(EPstateInit)
+
+	epc.epMap[epUuid] = &ep
 
 	return true
 }

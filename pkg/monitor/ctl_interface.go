@@ -56,6 +56,8 @@ func (s Epstate) String() string {
 		return "down"
 	case EPstateRemoving:
 		return "removing"
+	case EPstateAny:
+		return "any"
 	default:
 		return "unknown"
 	}
@@ -74,17 +76,7 @@ type NcsiEP struct {
 	Mutex        sync.Mutex               `json:"-"`
 	lh           *LookoutHandler          `json:"-"`
 	lsofGen      uint64                   `json:"-"`
-}
-
-func (ep *NcsiEP) ChangeState(s Epstate) {
-	if s != ep.State {
-
-		old := ep.State
-
-		ep.State = s
-
-		ep.LogWithDepth(xlog.WARN, 1, "old-state=%s", old.String())
-	}
+	watched      bool                     `json:"-"`
 }
 
 type epCommand struct {
@@ -180,6 +172,77 @@ func (c *epCommand) submit() {
 	} else if xlog.IsLevelEnabled(xlog.INFO) {
 		c.ep.Log(xlog.INFO, "uuid=%s %s",
 			c.ep.Uuid.String(), c.getInFnam())
+	}
+}
+
+func isWatchedState(s Epstate) bool {
+	switch s {
+	case EPstateRemoving:
+		return false
+	case EPstateUnknown:
+		return false
+	case EPstateAny:
+		return false
+	default:
+		break
+	}
+
+	return true
+}
+
+func (ep *NcsiEP) ensureWatchedState() {
+	if ep.watched != isWatchedState(ep.State) {
+		ep.LogWithDepth(xlog.FATAL, 1,
+			"invalid state for being watched")
+	}
+}
+
+// Called when upon a state is *changing*.  ChangeState() is the only allowed
+// caller.
+func (ep *NcsiEP) watchCtl(newState Epstate) {
+
+	iws := isWatchedState(newState)
+
+	if iws == ep.watched {
+		return
+	}
+
+	var err error
+	var action string
+
+	if iws {
+		action = "Add"
+		err = ep.lh.EpWatcher.Add(ep.Xpath(EP_PATH_OUTPUT))
+	} else {
+		action = "Remove"
+		err = ep.lh.EpWatcher.Remove(ep.Xpath(EP_PATH_OUTPUT))
+	}
+
+	if err != nil {
+		ep.Log(xlog.ERROR, "Watcher.%s() failed: %v",
+			action, err)
+	}
+	ep.watched = iws
+
+	ep.Log(xlog.INFO, "watch state changed -> %s", action)
+}
+
+func (ep *NcsiEP) ChangeState(s Epstate) {
+	if s == EPstateAny {
+		ep.LogWithDepth(xlog.FATAL, 1,
+			"%s is not a settable state", s.String())
+	}
+
+	if s != ep.State {
+
+		old := ep.State
+
+		ep.ensureWatchedState()
+
+		ep.watchCtl(s)
+		ep.State = s
+
+		ep.LogWithDepth(xlog.WARN, 1, "old-state=%s", old.String())
 	}
 }
 
@@ -319,6 +382,10 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 	c.loadOutfile()
 	if c.err != nil {
 		return c.err
+	}
+
+	if ep.State == EPstateDown {
+		ep.ChangeState(EPstateRunning)
 	}
 
 	var err error

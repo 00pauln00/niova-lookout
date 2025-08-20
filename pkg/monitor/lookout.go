@@ -1,8 +1,6 @@
 package monitor
 
 import (
-	//	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -249,22 +247,7 @@ func (h *LookoutHandler) scan() {
 		panic("scan() only allowed during bootup")
 	}
 
-	files, err := ioutil.ReadDir(h.CTLPath)
-	if err != nil {
-		xlog.Fatal("ioutil.ReadDir():", err)
-	}
-
-	for _, file := range files {
-		if uuid, err := uuid.Parse(file.Name()); err == nil {
-			if (h.Epc.MonitorUUID == "*") ||
-				(h.Epc.MonitorUUID == uuid.String()) {
-				h.tryAdd(uuid)
-			}
-		}
-	}
-
-	h.lookoutLsof() // Run the lsof scan to identify stale directories
-	//	h.purgeStale()
+	h.lookoutLsof() // Run the lsof scan to determine alive niova processes
 }
 
 func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
