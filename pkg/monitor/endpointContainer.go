@@ -95,8 +95,7 @@ func (epc *EPContainer) PollEPs() {
 // }
 
 func (epc *EPContainer) Process(epUuid uuid.UUID, cmdUuid uuid.UUID) {
-
-	if ep := epc.epMap[epUuid]; ep != nil {
+	if ep := epc.Lookup(epUuid); ep != nil {
 		ep.Complete(cmdUuid, nil)
 	}
 }
@@ -150,13 +149,13 @@ func (epc *EPContainer) AddEp(lh *LookoutHandler, epUuid uuid.UUID) bool {
 		Uuid:        epUuid,
 		lh:          lh,
 		LastReport:  time.Now(),
-		State:       EPstateInit,
+		State:       EPstateUnknown,
 		pendingCmds: make(map[uuid.UUID]*epCommand),
 		App:         &applications.Unrecognized{},
 		lsofGen:     lh.lsofGen,
 	}
 
-	ep.watchCtl(EPstateInit)
+	ep.ChangeState(EPstateInit)
 
 	epc.epMap[epUuid] = &ep
 
@@ -176,6 +175,7 @@ func (epc *EPContainer) JsonMarshal(state Epstate) []byte {
 	var err error
 
 	epc.mutex.Lock()
+	defer epc.mutex.Unlock()
 
 	if state == EPstateAny {
 		jsonData, err = json.MarshalIndent(epc.epMap, "", "\t")
@@ -192,8 +192,6 @@ func (epc *EPContainer) JsonMarshal(state Epstate) []byte {
 		jsonData, err = json.MarshalIndent(filtered, "", "\t")
 		filtered = nil
 	}
-
-	epc.mutex.Unlock()
 
 	if err != nil {
 		return nil
