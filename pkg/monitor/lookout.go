@@ -192,7 +192,7 @@ func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
 
 	tevnam := strings.Split(event.Name, "/") // tokenized event name
 	//	var evtype = EV_TYPE_INVALID
-	var pdepth = len(tevnam) - 1
+	pdepth := len(tevnam) - 1
 
 	epUuid, err := uuid.Parse(tevnam[EV_PATHDEPTH_UUID])
 
@@ -238,6 +238,8 @@ func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
 		h.Epc.Process(epUuid, cmdUuid)
 
 	case EV_PATHDEPTH_EP_REGISTER:
+		xlog.Infof("tryAdd: ep-uuid: %s", epUuid.String())
+
 		h.tryAdd(epUuid)
 	}
 }
