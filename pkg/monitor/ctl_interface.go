@@ -398,6 +398,7 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 
 	c.loadOutfile()
 	if c.err != nil {
+		ep.Log(xlog.WARN, "c.loadOutfile(): %v", c.err)
 		return c.err
 	}
 
