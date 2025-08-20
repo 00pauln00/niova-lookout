@@ -51,11 +51,8 @@ func (epc *EPContainer) CleanEPs() {
 		ep.flushStaleCmds()
 		ep.RemoveStaleFiles()
 
-		if ep.LastReportIsStale() {
-			switch ep.State {
-			case EPstateRunning:
-				ep.ChangeState(EPstateDown)
-			}
+		if ep.State == EPstateRunning && ep.LastReportIsStale() {
+			ep.ChangeState(EPstateDown)
 
 		} else if ep.LsofGenIsStale() {
 			// Items that eligible for Removing state
