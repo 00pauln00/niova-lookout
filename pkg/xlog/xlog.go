@@ -181,6 +181,7 @@ func (f *MyFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 		fn = runtime.FuncForPC(pc)
 
 		if !strings.Contains(fn.Name(), "logrus") &&
+			!strings.Contains(fn.Name(), "Logger") &&
 			!strings.Contains(fn.Name(), "xlog") {
 			if depth == 0 {
 				fileBase = path.Base(file)

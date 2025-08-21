@@ -71,7 +71,6 @@ func (handler *handler) parseCMDArgs() {
 	flag.StringVar(&handler.promPath, "pr", "./targets.json",
 		"Prometheus targets info")
 
-	flag.StringVar(&handler.coms.SerfLogger, "s", "serf.log", "Serf logs")
 	flag.StringVar(&lookoutLogger, "l", "", "Lookout logs")
 	flag.StringVar(&handler.coms.RaftUUID, "r", "", "Raft UUID")
 	flag.StringVar(&handler.coms.LookoutUUID, "lu", uuid.NewString(),
