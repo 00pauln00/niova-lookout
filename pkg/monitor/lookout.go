@@ -16,31 +16,42 @@ import (
 
 //var HttpPort int
 
+type lookoutState int
+
+const (
+	BOOTING lookoutState = iota
+	RUNNING
+	SHUTDOWN
+)
+
+func (s lookoutState) String() string {
+	switch s {
+	case BOOTING:
+		return "booting"
+	case RUNNING:
+		return "running"
+	case SHUTDOWN:
+		return "shutdown"
+	default:
+		break
+	}
+	return "unknown"
+}
+
 type LookoutHandler struct {
 	PromPath  string
 	HttpPort  int
-	run       bool
 	CTLPath   string
 	Statb     syscall.Stat_t
 	Epc       *EPContainer
 	EpWatcher *fsnotify.Watcher
 	lsofGen   uint64
+	state     lookoutState
 }
 
-type lookout_state int
-
-const (
-	BOOTING lookout_state = iota
-	RUNNING
-	SHUTDOWN
-)
-
-// XXX move to LookoutHandler?
-var lookoutState lookout_state = BOOTING
-
-func LookoutWaitUntilReady() {
-	for lookoutState != RUNNING {
-		xlog.Debug("waiting for RUNNING")
+func (h *LookoutHandler) LookoutWaitUntilState(s lookoutState) {
+	for h.state != s {
+		xlog.Debugf("waiting for %s", s.String())
 		time.Sleep(1 * time.Second)
 	}
 }
@@ -91,13 +102,10 @@ func (h *LookoutHandler) lookoutLsof() error {
 }
 
 func (h *LookoutHandler) monitorLsof() {
-	if lookoutState != BOOTING {
-		panic("Invalid lookoutState")
-	}
 
 	sleepTime := 60 * time.Second
 
-	for h.run == true {
+	for h.state != SHUTDOWN {
 		time.Sleep(sleepTime)
 
 		h.lookoutLsof()
@@ -108,9 +116,12 @@ func (h *LookoutHandler) monitor() error {
 	var err error = nil
 	var sleepTime time.Duration
 
-	if lookoutState != BOOTING {
+	if h.state != BOOTING {
 		panic("Invalid lookoutState")
 	}
+
+	xlog.Info("RUNNING")
+	h.state = RUNNING
 
 	sleepEnv := os.Getenv("LOOKOUT_SLEEP")
 	if sleepEnv != "" {
@@ -126,15 +137,10 @@ func (h *LookoutHandler) monitor() error {
 
 	xlog.Info("Lookout monitor sleep time: ", sleepTime)
 
-	for h.run == true {
+	for h.state != SHUTDOWN {
 		h.Epc.CleanEPs()
 		h.Epc.PollEPs()
 
-		// Perform one endpoint poll before entering RUNNING mode
-		if lookoutState == BOOTING {
-			xlog.Debug("enter RUNNING")
-			lookoutState = RUNNING
-		}
 		time.Sleep(sleepTime)
 	}
 
@@ -238,82 +244,54 @@ func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
 		h.Epc.Process(epUuid, cmdUuid)
 
 	case EV_PATHDEPTH_EP_REGISTER:
-		xlog.Infof("tryAdd: ep-uuid: %s", epUuid.String())
+		xlog.Infof("h.Epc.AddEp(): ep-uuid: %s", epUuid.String())
 
-		h.tryAdd(epUuid)
+		h.Epc.AddEp(h, epUuid)
 	}
 }
 
-func (h *LookoutHandler) scan() {
+func (h *LookoutHandler) Start() error {
 
-	if lookoutState != BOOTING {
-		panic("scan() only allowed during bootup")
-	}
+	var err error
 
-	h.lookoutLsof() // Run the lsof scan to determine alive niova processes
-}
-
-func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
-	h.Epc.AddEp(h, epUuid)
-}
-
-func (h *LookoutHandler) init() error {
 	// Check the provided endpoint root path
-	err := syscall.Stat(h.CTLPath, &h.Statb)
-	if err != nil {
+	if err = syscall.Stat(h.CTLPath, &h.Statb); err != nil {
+		xlog.Error("syscall.Stat(%s): ", h.CTLPath, err)
 		return err
 	}
 
-	// Set path (Xxx still need to check if this is a directory or not)
-
-	err = h.Epc.InitializeEpMap()
-	if err != nil {
+	if err = h.Epc.InitializeEpMap(); err != nil {
+		xlog.Error("h.Epc.InitializeEpMap(): ", err)
 		return err
 	}
 
-	h.EpWatcher, err = fsnotify.NewWatcher()
-	if err != nil {
+	h.Epc.HttpQuery = make(map[string](chan []byte))
+
+	if h.EpWatcher, err = fsnotify.NewWatcher(); err != nil {
+		xlog.Error("fsnotify.NewWatcher(): ", err)
 		return err
 	}
 
-	xlog.Info("fsnotify watch: ", h.CTLPath)
-	err = h.EpWatcher.Add(h.CTLPath)
-	if err != nil {
+	if err = h.EpWatcher.Add(h.CTLPath); err != nil {
 		h.EpWatcher.Close()
+		xlog.Error("h.EpWatcher.Add(): ", err)
 		return err
 	}
 
-	h.run = true
+	if err = h.writePromPath(); err != nil {
+		xlog.Error("h.writePromPath(): ", err)
+		return err
+	}
 
-	h.scan() // Scan the ctl-interface directory
+	// Run the lsof scan to determine alive niova processes
+	h.lookoutLsof()
 
 	go h.epOutputWatcher()
 	go h.monitorLsof()
 
-	return nil
-}
-
-func (h *LookoutHandler) Start() error {
-	var err error
-	h.Epc.HttpQuery = make(map[string](chan []byte))
-
-	err = h.writePromPath()
-	if err != nil {
-		return err
-	}
-	//Setup lookout
-	xlog.Info("Initializing Lookout")
-	err = h.init()
-	if err != nil {
-		xlog.Debug("Lookout Init - ", err)
-		return err
-	}
-
-	//Start monitoring
-	xlog.Info("Starting Monitor")
-	err = h.monitor()
-	if err != nil {
-		xlog.Debug("Lookout Monitor - ", err)
+	// Start monitoring
+	if err = h.monitor(); err != nil {
+		xlog.Error("h.monitor(): ", err)
 		return err
 	}
 
