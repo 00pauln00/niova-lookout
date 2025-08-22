@@ -39,16 +39,21 @@ func (s lookoutState) String() string {
 	return "unknown"
 }
 
+type LookoutInotify struct {
+	ifd  int
+	wid  int             // for this LookoutHandler
+	wmap map[int]*NcsiEP // for endpoints
+}
+
 type LookoutHandler struct {
-	PromPath       string
-	HttpPort       int
-	CTLPath        string
-	Statb          syscall.Stat_t
-	Epc            *EPContainer
-	lsofGen        uint64
-	state          lookoutState
-	inotifyFD      int
-	inotifyWatchFD int
+	PromPath string
+	HttpPort int
+	CTLPath  string
+	Statb    syscall.Stat_t
+	Epc      *EPContainer
+	lsofGen  uint64
+	state    lookoutState
+	inotify  LookoutInotify
 }
 
 func (h *LookoutHandler) LookoutWaitUntilState(s lookoutState) {
@@ -178,7 +183,7 @@ func (h *LookoutHandler) epInotifyWatch() {
 
 	for h.state != SHUTDOWN {
 
-		n, err := unix.Read(h.inotifyFD, buf)
+		n, err := unix.Read(h.inotify.ifd, buf)
 		if err != nil {
 			if err == unix.EAGAIN || err == unix.EINTR {
 				// no events available, just continue
@@ -210,35 +215,34 @@ func (h *LookoutHandler) epInotifyWatch() {
 }
 
 func (h *LookoutHandler) EpWatchAdd(path string, events uint32) (int, error) {
-	if h.inotifyFD == -1 || h.inotifyWatchFD == -1 {
+	if h.inotify.ifd == -1 || h.inotify.wid == -1 {
 		xlog.Fatal("Inotify FDs have not been initialized")
 	}
 
-	return unix.InotifyAddWatch(h.inotifyFD, path, events)
+	return unix.InotifyAddWatch(h.inotify.ifd, path, events)
 }
 
 func (h *LookoutHandler) EpWatchRemove(wid uint32) {
-	if h.inotifyFD == -1 || h.inotifyWatchFD == -1 {
+	if h.inotify.ifd == -1 || h.inotify.wid == -1 {
 		xlog.Fatal("Inotify FDs have not been initialized")
 	}
 
-	unix.InotifyRmWatch(h.inotifyFD, wid)
+	unix.InotifyRmWatch(h.inotify.ifd, wid)
 }
 
 func (h *LookoutHandler) epInotifyStart() {
-	h.inotifyFD = -1
-	h.inotifyWatchFD = -1
+	h.inotify.ifd = -1
+	h.inotify.wid = -1
 
 	var err error
 
-	h.inotifyFD, err = unix.InotifyInit()
+	h.inotify.ifd, err = unix.InotifyInit()
 
 	xlog.FatalIfErr(err, "unix.InotifyInit(): %v", err)
 
 	// Add watch only for CREATE events
-	h.inotifyWatchFD, err =
-		unix.InotifyAddWatch(h.inotifyFD, h.CTLPath,
-			unix.IN_CREATE|unix.IN_ATTRIB)
+	h.inotify.wid, err = unix.InotifyAddWatch(h.inotify.ifd, h.CTLPath,
+		unix.IN_CREATE|unix.IN_ATTRIB)
 
 	xlog.FatalIfErr(err, "unix.InotifyAddWatch(): %v", err)
 
