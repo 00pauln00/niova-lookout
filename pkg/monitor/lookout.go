@@ -1,10 +1,12 @@
 package monitor
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -40,9 +42,10 @@ func (s lookoutState) String() string {
 }
 
 type LookoutInotify struct {
-	ifd  int
-	wid  int             // for this LookoutHandler
-	wmap map[int]*NcsiEP // for endpoints
+	ifd   int
+	wd    int32             // watch descriptor for this LookoutHandler
+	wmap  map[int32]*NcsiEP // for endpoints
+	mutex sync.Mutex
 }
 
 type LookoutHandler struct {
@@ -197,15 +200,16 @@ func (h *LookoutHandler) epInotifyWatch() {
 		for off <= uint32(n-unix.SizeofInotifyEvent) {
 			ev := (*unix.InotifyEvent)(unsafe.Pointer(&buf[off]))
 			nameBytes := buf[off+unix.SizeofInotifyEvent : off+unix.SizeofInotifyEvent+ev.Len]
+			name := string(bytes.TrimRight(nameBytes, "\x00"))
 
 			off += unix.SizeofInotifyEvent + ev.Len
 
 			ievent := inotifyEvent{
-				Name:  string(nameBytes),
+				Name:  name,
 				Event: *ev, // copy struct value
 			}
 
-			xlog.Warnf("ievent=%v", ievent)
+			xlog.Infof("ievent=%v", ievent)
 
 			h.processEvent(&ievent)
 		}
@@ -214,77 +218,151 @@ func (h *LookoutHandler) epInotifyWatch() {
 	buf = nil
 }
 
-func (h *LookoutHandler) EpWatchAdd(path string, events uint32) (int, error) {
-	if h.inotify.ifd == -1 || h.inotify.wid == -1 {
+func (h *LookoutHandler) EpWatchAdd(ep *NcsiEP, events uint32) error {
+	if h.inotify.ifd == -1 || h.inotify.wd == -1 {
 		xlog.Fatal("Inotify FDs have not been initialized")
 	}
 
-	return unix.InotifyAddWatch(h.inotify.ifd, path, events)
+	infy := &h.inotify
+
+	if ep == nil {
+		return unix.EINVAL
+	}
+
+	if ep.wid != -1 {
+		return unix.EBUSY
+	}
+
+	// Lock map
+	infy.mutex.Lock()
+	defer infy.mutex.Unlock()
+
+	wid, err :=
+		unix.InotifyAddWatch(h.inotify.ifd, ep.Xpath(EP_PATH_OUTPUT),
+			events)
+
+	if err != nil {
+		return err
+	}
+
+	xlog.FatalIF((wid < 0),
+		"unix.InotifyAddWatch() succeeded but wid=%d < 0", wid)
+
+	if infy.wmap[int32(wid)] != nil {
+		ep.Log(xlog.FATAL, "ep already exists at wid=%d", wid)
+	}
+
+	ep.wid = int32(wid)
+	infy.wmap[int32(wid)] = ep
+
+	ep.Log(xlog.INFO, "ok")
+
+	return nil
 }
 
-func (h *LookoutHandler) EpWatchRemove(wid uint32) {
-	if h.inotify.ifd == -1 || h.inotify.wid == -1 {
+func (h *LookoutHandler) EpWatchRemove(ep *NcsiEP) {
+	if h.inotify.ifd == -1 || h.inotify.wd == -1 || ep == nil {
 		xlog.Fatal("Inotify FDs have not been initialized")
 	}
 
-	unix.InotifyRmWatch(h.inotify.ifd, wid)
+	if ep.wid < 0 {
+		ep.Log(xlog.FATAL, "ep is not being watched")
+	}
+
+	infy := &h.inotify
+
+	// Lock map
+	infy.mutex.Lock()
+	defer infy.mutex.Unlock()
+
+	xep, ok := infy.wmap[ep.wid]
+	if !ok {
+		ep.Log(xlog.FATAL, "ep does not exist in map")
+	}
+
+	if ep != xep {
+		xep.Log(xlog.ERROR, "this ep was found when..")
+		ep.Log(xlog.FATAL, ".. this one was expected")
+	}
+
+	delete(infy.wmap, ep.wid)
+
+	ep.wid = -1
+
+	unix.InotifyRmWatch(h.inotify.ifd, uint32(ep.wid))
+}
+
+func (h *LookoutHandler) epWatchLookup(event *inotifyEvent) *NcsiEP {
+	infy := &h.inotify
+
+	infy.mutex.Lock()
+	defer infy.mutex.Unlock()
+
+	ep, ok := infy.wmap[event.Event.Wd]
+
+	if !ok {
+		return nil
+	}
+
+	ep.Log(xlog.INFO, "")
+
+	return ep
 }
 
 func (h *LookoutHandler) epInotifyStart() {
 	h.inotify.ifd = -1
-	h.inotify.wid = -1
+	h.inotify.wd = -1
 
 	var err error
 
+	h.inotify.wmap = make(map[int32](*NcsiEP))
+
 	h.inotify.ifd, err = unix.InotifyInit()
 
-	xlog.FatalIfErr(err, "unix.InotifyInit(): %v", err)
+	xlog.FatalIF((err != nil || h.inotify.ifd < 0),
+		"unix.InotifyInit(): %v (ifd=%d)", err, h.inotify.ifd)
+
+	var wid int
 
 	// Add watch only for CREATE events
-	h.inotify.wid, err = unix.InotifyAddWatch(h.inotify.ifd, h.CTLPath,
+	wid, err = unix.InotifyAddWatch(h.inotify.ifd, h.CTLPath,
 		unix.IN_CREATE|unix.IN_ATTRIB)
 
-	xlog.FatalIfErr(err, "unix.InotifyAddWatch(): %v", err)
+	xlog.FatalIF((err != nil || wid < 0), "unix.InotifyAddWatch(): %v", err)
+
+	h.inotify.wd = int32(wid)
 
 	go h.epInotifyWatch()
 }
 
-const (
-	EV_TYPE_INVALID     = iota // The event does match known event types
-	EV_TYPE_EP_REGISTER        // New EPs entering the ctl-interface
-	EV_TYPE_EP_DATA            // Existing EPs producing data
-)
+func (h *LookoutHandler) processEvent(e *inotifyEvent) {
 
-const (
-	EV_PATHDEPTH_UUID        = 3
-	EV_PATHDEPTH_EP_REGISTER = EV_PATHDEPTH_UUID
-	EV_PATHDEPTH_EP_DATA     = 5
-)
+	xlog.Infof("%v", e)
 
-func (h *LookoutHandler) processEvent(event *inotifyEvent) {
+	if e.Event.Wd == h.inotify.wd {
+		epUuid, err := uuid.Parse(e.Name)
+		if err != nil {
+			xlog.Error("cmd uuid.Parse(): ", err)
+			return
+		}
 
-	tevnam := strings.Split(event.Name, "/") // tokenized event name
-	//	var evtype = EV_TYPE_INVALID
-	pdepth := len(tevnam) - 1
+		xlog.Infof("h.Epc.AddEp(): ep-uuid: %s", epUuid.String())
 
-	epUuid, err := uuid.Parse(tevnam[EV_PATHDEPTH_UUID])
+		h.Epc.AddEp(h, epUuid)
 
-	xlog.Debugf("event=%s, splitpath=%s, len=%d uuid-err=%v",
-		event.Name, tevnam, len(tevnam), err)
+	} else {
+		evfile := e.Name
 
-	if err != nil {
-		xlog.Error("ep uuid.Parse(): ", err)
-		return
-	}
+		ep := h.epWatchLookup(e)
 
-	// Note that this switch may need to handle 2 items w/ the same depth
-	switch pdepth {
-	case EV_PATHDEPTH_EP_DATA:
-		evfile := tevnam[EV_PATHDEPTH_EP_DATA]
+		if ep == nil {
+			xlog.Warnf("Failed to find ep@wid=%d", e.Event.Wd)
+			return
+		}
 
 		//temp file exclusion
 		if strings.HasPrefix(evfile, ".") {
-			xlog.Tracef("skipping ctl-interface temp file: %s",
+			xlog.Debugf("skipping ctl-interface temp file: %s",
 				evfile)
 			return
 		}
@@ -303,17 +381,8 @@ func (h *LookoutHandler) processEvent(event *inotifyEvent) {
 			return
 		}
 
-		xlog.Infof("ev-complete: ep-uuid: %s, cmd-uuid=%s",
-			epUuid.String(), cmdUuid.String())
-
-		// XXX need to explore this!
-		//h.Epc.HandleHttpQuery(evfile, uuid)
-		h.Epc.Process(epUuid, cmdUuid)
-
-	case EV_PATHDEPTH_EP_REGISTER:
-		xlog.Infof("h.Epc.AddEp(): ep-uuid: %s", epUuid.String())
-
-		h.Epc.AddEp(h, epUuid)
+		ep.Log(xlog.INFO, "ev-complete: cmd-uuid=%s", cmdUuid.String())
+		ep.Complete(cmdUuid, nil)
 	}
 }
 

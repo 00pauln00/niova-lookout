@@ -78,7 +78,7 @@ type NcsiEP struct {
 	lh           *LookoutHandler          `json:"-"`
 	lsofGen      uint64                   `json:"-"`
 	watched      bool                     `json:"-"`
-	wid          int                      `json:"-"`
+	wid          int32                    `json:"-"` // watch descriptor id
 }
 
 func (s Epstate) MarshalJSON() ([]byte, error) {
@@ -220,24 +220,17 @@ func (ep *NcsiEP) watchCtl(newState Epstate) {
 		return
 	}
 
-	var err error
 	var action string
-	var wid int
+	var err error
 
 	if iws {
 		action = "Add"
-		wid, err = ep.lh.EpWatchAdd(ep.Xpath(EP_PATH_OUTPUT),
-			unix.IN_CREATE)
-		if err == nil {
-			ep.wid = wid
-		} else {
-			ep.wid = -1
-		}
+		err = ep.lh.EpWatchAdd(ep, unix.IN_MOVE_SELF|unix.IN_MOVED_TO)
+
+		xlog.FatalIfErr(err, "ep.lh.EpWatchAdd(): %v", err)
 	} else {
 		action = "Remove"
-		ep.lh.EpWatchRemove(uint32(ep.wid))
-
-		ep.wid = -1
+		ep.lh.EpWatchRemove(ep)
 	}
 
 	if err != nil {
@@ -382,7 +375,7 @@ func (ep *NcsiEP) update(ctlData applications.CtlIfOut) {
 func (ep *NcsiEP) LogWithDepth(level int, depth int, format string,
 	args ...interface{}) {
 	// Common prefix fields
-	prefixFormat := "%s@%s s=%s pc=%d age=%s lg=%d"
+	prefixFormat := "%s@%s s=%s pc=%d age=%s lg=%d wid=%d"
 	prefixArgs := []interface{}{
 		ep.App.GetAppName(),
 		ep.Uuid.String(),
@@ -390,6 +383,7 @@ func (ep *NcsiEP) LogWithDepth(level int, depth int, format string,
 		len(ep.pendingCmds),
 		time.Since(ep.LastSeen).Truncate(time.Millisecond),
 		ep.lsofGen,
+		ep.wid,
 	}
 
 	var combinedFmt string

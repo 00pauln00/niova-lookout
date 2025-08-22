@@ -155,6 +155,7 @@ func (epc *EPContainer) AddEp(lh *LookoutHandler, epUuid uuid.UUID) bool {
 		pendingCmds: make(map[uuid.UUID]*epCommand),
 		App:         &applications.Unrecognized{},
 		lsofGen:     lh.lsofGen,
+		wid:         -1,
 	}
 
 	ep.ChangeState(EPstateInit)

@@ -132,6 +132,11 @@ func FatalIfErr(err error, format string, args ...interface{}) {
 	}
 }
 
+func FatalIF(cond bool, format string, args ...interface{}) {
+	if cond {
+		WithDepth(FATAL, 1, format, args...)
+	}
+}
 func IsLevelEnabled(level int) bool {
 	switch level {
 	case TRACE:
