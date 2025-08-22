@@ -125,6 +125,13 @@ func WithDepth(level int, depth int, format string, args ...interface{}) {
 	}
 }
 
+func FatalIfErr(err error, format string, args ...interface{}) {
+
+	if err != nil {
+		WithDepth(FATAL, 1, format, args)
+	}
+}
+
 func IsLevelEnabled(level int) bool {
 	switch level {
 	case TRACE:

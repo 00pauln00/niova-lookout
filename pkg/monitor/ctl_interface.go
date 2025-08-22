@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sys/unix"
 
 	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/xlog"
@@ -77,6 +78,7 @@ type NcsiEP struct {
 	lh           *LookoutHandler          `json:"-"`
 	lsofGen      uint64                   `json:"-"`
 	watched      bool                     `json:"-"`
+	wid          int                      `json:"-"`
 }
 
 func (s Epstate) MarshalJSON() ([]byte, error) {
@@ -220,13 +222,22 @@ func (ep *NcsiEP) watchCtl(newState Epstate) {
 
 	var err error
 	var action string
+	var wid int
 
 	if iws {
 		action = "Add"
-		err = ep.lh.EpWatcher.Add(ep.Xpath(EP_PATH_OUTPUT))
+		wid, err = ep.lh.EpWatchAdd(ep.Xpath(EP_PATH_OUTPUT),
+			unix.IN_CREATE)
+		if err == nil {
+			ep.wid = wid
+		} else {
+			ep.wid = -1
+		}
 	} else {
 		action = "Remove"
-		err = ep.lh.EpWatcher.Remove(ep.Xpath(EP_PATH_OUTPUT))
+		ep.lh.EpWatchRemove(uint32(ep.wid))
+
+		ep.wid = -1
 	}
 
 	if err != nil {
@@ -235,7 +246,7 @@ func (ep *NcsiEP) watchCtl(newState Epstate) {
 	}
 	ep.watched = iws
 
-	ep.Log(xlog.INFO, "watch state changed -> %s", action)
+	ep.Log(xlog.INFO, "watch state changed (id=%d)-> %s", action, ep.wid)
 }
 
 func (ep *NcsiEP) ChangeState(s Epstate) {

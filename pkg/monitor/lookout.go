@@ -7,9 +7,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
+	"golang.org/x/sys/unix"
 
 	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
@@ -39,14 +40,15 @@ func (s lookoutState) String() string {
 }
 
 type LookoutHandler struct {
-	PromPath  string
-	HttpPort  int
-	CTLPath   string
-	Statb     syscall.Stat_t
-	Epc       *EPContainer
-	EpWatcher *fsnotify.Watcher
-	lsofGen   uint64
-	state     lookoutState
+	PromPath       string
+	HttpPort       int
+	CTLPath        string
+	Statb          syscall.Stat_t
+	Epc            *EPContainer
+	lsofGen        uint64
+	state          lookoutState
+	inotifyFD      int
+	inotifyWatchFD int
 }
 
 func (h *LookoutHandler) LookoutWaitUntilState(s lookoutState) {
@@ -165,21 +167,82 @@ func (h *LookoutHandler) writePromPath() error {
 	return nil
 }
 
-func (h *LookoutHandler) epOutputWatcher() {
-	for {
-		select {
-		case event := <-h.EpWatcher.Events:
+type inotifyEvent struct {
+	Name  string
+	Event unix.InotifyEvent
+}
 
-			if event.Op == fsnotify.Create {
-				h.processEvent(&event)
+func (h *LookoutHandler) epInotifyWatch() {
+
+	buf := make([]byte, 4096)
+
+	for h.state != SHUTDOWN {
+
+		n, err := unix.Read(h.inotifyFD, buf)
+		if err != nil {
+			if err == unix.EAGAIN || err == unix.EINTR {
+				// no events available, just continue
+				continue
+			} else {
+				xlog.Fatalf("unix.Read(): %v", err)
+			}
+		}
+
+		var off uint32
+		for off <= uint32(n-unix.SizeofInotifyEvent) {
+			ev := (*unix.InotifyEvent)(unsafe.Pointer(&buf[off]))
+			nameBytes := buf[off+unix.SizeofInotifyEvent : off+unix.SizeofInotifyEvent+ev.Len]
+
+			off += unix.SizeofInotifyEvent + ev.Len
+
+			ievent := inotifyEvent{
+				Name:  string(nameBytes),
+				Event: *ev, // copy struct value
 			}
 
-			// watch for errors
-		case err := <-h.EpWatcher.Errors:
-			xlog.Error("EpWatcher pipe: ", err)
+			xlog.Warnf("ievent=%v", ievent)
 
+			h.processEvent(&ievent)
 		}
 	}
+
+	buf = nil
+}
+
+func (h *LookoutHandler) EpWatchAdd(path string, events uint32) (int, error) {
+	if h.inotifyFD == -1 || h.inotifyWatchFD == -1 {
+		xlog.Fatal("Inotify FDs have not been initialized")
+	}
+
+	return unix.InotifyAddWatch(h.inotifyFD, path, events)
+}
+
+func (h *LookoutHandler) EpWatchRemove(wid uint32) {
+	if h.inotifyFD == -1 || h.inotifyWatchFD == -1 {
+		xlog.Fatal("Inotify FDs have not been initialized")
+	}
+
+	unix.InotifyRmWatch(h.inotifyFD, wid)
+}
+
+func (h *LookoutHandler) epInotifyStart() {
+	h.inotifyFD = -1
+	h.inotifyWatchFD = -1
+
+	var err error
+
+	h.inotifyFD, err = unix.InotifyInit()
+
+	xlog.FatalIfErr(err, "unix.InotifyInit(): %v", err)
+
+	// Add watch only for CREATE events
+	h.inotifyWatchFD, err =
+		unix.InotifyAddWatch(h.inotifyFD, h.CTLPath,
+			unix.IN_CREATE|unix.IN_ATTRIB)
+
+	xlog.FatalIfErr(err, "unix.InotifyAddWatch(): %v", err)
+
+	go h.epInotifyWatch()
 }
 
 const (
@@ -194,7 +257,7 @@ const (
 	EV_PATHDEPTH_EP_DATA     = 5
 )
 
-func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
+func (h *LookoutHandler) processEvent(event *inotifyEvent) {
 
 	tevnam := strings.Split(event.Name, "/") // tokenized event name
 	//	var evtype = EV_TYPE_INVALID
@@ -265,18 +328,9 @@ func (h *LookoutHandler) Start() error {
 		return err
 	}
 
+	h.epInotifyStart()
+
 	h.Epc.HttpQuery = make(map[string](chan []byte))
-
-	if h.EpWatcher, err = fsnotify.NewWatcher(); err != nil {
-		xlog.Error("fsnotify.NewWatcher(): ", err)
-		return err
-	}
-
-	if err = h.EpWatcher.Add(h.CTLPath); err != nil {
-		h.EpWatcher.Close()
-		xlog.Error("h.EpWatcher.Add(): ", err)
-		return err
-	}
 
 	if err = h.writePromPath(); err != nil {
 		xlog.Error("h.writePromPath(): ", err)
@@ -286,7 +340,6 @@ func (h *LookoutHandler) Start() error {
 	// Run the lsof scan to determine alive niova processes
 	h.lookoutLsof()
 
-	go h.epOutputWatcher()
 	go h.monitorLsof()
 
 	// Start monitoring
