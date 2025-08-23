@@ -31,7 +31,6 @@ This builds the binary to `./niova-lookout` using the Go source in `cmd/lookout`
   -a 127.0.0.1 \
   -c ./gossip.txt \
   -pr ./targets.json \
-  -s serf.log \
   -r raft-uuid \
   -lu lookout-uuid \
   -log debug
@@ -51,7 +50,6 @@ This builds the binary to `./niova-lookout` using the Go source in `cmd/lookout`
 | `-a`          | Agent bind IP                                                               |
 | `-c`          | Path to gossip config file for peer discovery                               |
 | `-pr`         | Path to Prometheus targets config (usually a port in string form)           |
-| `-s`          | Path to Serf log file                                                       |
 | `-r`          | Raft UUID                                                                   |
 | `-l`          | Lookout log file                                                            |
 | `-lu`         | Lookout UUID                                                                |
