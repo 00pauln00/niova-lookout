@@ -18,6 +18,8 @@ import (
 	serf "github.com/00pauln00/niova-pumicedb/go/pkg/utils/serfagent"
 	sd "github.com/00pauln00/niova-pumicedb/go/pkg/utils/servicediscovery"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/00pauln00/niova-lookout/pkg/monitor"
 	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/requestResponseLib"
@@ -38,25 +40,78 @@ func (h *CommHandler) SerfMembership() map[string]bool {
 	return returnMap
 }
 
-func (h *CommHandler) StartSerfAgent() error {
-	//set serf Log Output to serf logger from flag
-	file, err := os.OpenFile(h.SerfLogger, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
-	if err != nil {
-		return err
+type logrusWriter struct{}
+
+// This method intercepts the log msgs from the serf logrus api and converts
+//   them to xlog by parsing the log level contained in the msg.
+func (lw logrusWriter) Write(p []byte) (n int, err error) {
+	// Split off the first three space-separated fields
+
+	line := string(p)
+
+	parts := strings.SplitN(line, " ", 4)
+	if len(parts) < 4 {
+		xlog.Warn("Malformed Serf log: %s", line)
+		return 0, nil
 	}
+	msgPart := parts[3] // contains :: [LEVEL] actual message
+
+	// Find the level
+	lvlStart := strings.Index(msgPart, "[")
+	lvlEnd := strings.Index(msgPart, "]")
+	var lvl string
+	var msg string
+	if lvlStart != -1 && lvlEnd != -1 && lvlEnd > lvlStart {
+		lvl = msgPart[lvlStart+1 : lvlEnd]
+		msg = strings.TrimSpace(msgPart[lvlEnd+1:])
+	} else {
+		lvl = "INFO"
+		msg = msgPart
+	}
+
+	logLevel := xlog.INFO
+
+	// Map Serf/logrus level to xlog
+	switch strings.ToUpper(lvl) {
+	case "DEBUG":
+		logLevel = xlog.DEBUG
+	case "INFO":
+		logLevel = xlog.INFO
+	case "WARNING":
+		logLevel = xlog.WARN
+	case "ERROR":
+		logLevel = xlog.ERROR
+	}
+
+	xlog.WithLevel(logLevel, "%s", msg)
+
+	return len(p), nil
+}
+
+func (h *CommHandler) StartSerfAgent() error {
+	lw := logrusWriter{}
+
+	// Wire Serf's agent logger to use our custom writer
+	// no LstdFlags because we don’t need timestamp/prefix
+	agentLogger := log.New(lw, "", 0)
+
+	// Also redirect logrus itself to our adapter
+	logrus.SetOutput(lw)
 
 	h.SerfHandler = serf.SerfAgentHandler{
 		Name:              h.AgentName,
 		Addr:              h.Addr,
 		ServicePortRangeS: uint16(h.ServicePortRangeS),
 		ServicePortRangeE: uint16(h.ServicePortRangeE),
-		AgentLogger:       log.New(file, "", log.LstdFlags),
+		AgentLogger:       agentLogger,
 		AddrList:          h.addrList,
 	}
 
-	//Start serf agent
+	// Start serf agent
 	memCount, err := h.SerfHandler.SerfAgentStartup(true)
-	// if no members were found, wait for a while and try again. giving other serf agents time to start
+
+	// If no members were found, wait for a while and try again.  Give
+	//   other serf agents time to start.
 	if memCount == 0 {
 		xlog.Warn("No serf members found, retrying...")
 		for i := 0; i < 3; i++ {
@@ -120,7 +175,8 @@ func (h *CommHandler) StartUDPListner() {
 	}
 }
 
-// getConfigNSend processes a UDP message, fetches config from PMDB, and responds to the sender.
+// getConfigNSend processes a UDP message, fetches config from PMDB, and
+//  responds to the sender.
 func (h *CommHandler) getConfigNSend(udpInfo UdpMessage) {
 	//Get uuid from the byte array
 	data := udpInfo.message
@@ -204,7 +260,8 @@ func (h *CommHandler) GetTags() {
 				// Decompress UUID key
 				uuidStr, err := compress.DecompressUUID(key)
 				if err != nil {
-					xlog.Error("Failed to decompress UUID key: ", key, " error: ", err)
+					xlog.Error("Failed to decompress UUID key: ",
+						key, " error: ", err)
 					continue
 				}
 				parsedUUID, err := uuid.Parse(uuidStr)
@@ -228,7 +285,8 @@ func (h *CommHandler) GetTags() {
 			h.Lookouts[loUUID] = lookout
 			h.mu.Unlock()
 
-			xlog.Tracef("Updated Lookout: %s, Monitoring %d apps", loUUID, len(lookout.Apps))
+			xlog.Tracef("Updated Lookout: %s, Monitoring %d apps",
+				loUUID, len(lookout.Apps))
 		}
 
 		//TODO: make this a variable
@@ -254,14 +312,14 @@ func (h *CommHandler) GetCompressedGossipData() map[string]string {
 			epType := ep.App.GetAppName()
 
 			// Create GossipData struct
-			gossipDataStruct := MonitoredApp{
+			gsd := MonitoredApp{
 				Status: cstatus,
 				Type:   epType,
 			}
 
-			marshaledGossipDataStruct, err := json.Marshal(gossipDataStruct)
+			marshaledGossipDataStruct, err := json.Marshal(gsd)
 			if err != nil {
-				xlog.Error("Error while marshaling GossipData struct: ", err)
+				xlog.Errorf("json.Marshal(): %v", err)
 				continue
 			}
 			gossipData[cuuid] = string(marshaledGossipDataStruct)

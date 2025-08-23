@@ -1,47 +1,124 @@
 package monitor
 
 import (
-	"io/ioutil"
+	"bytes"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+	"unsafe"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/google/uuid"
+	"golang.org/x/sys/unix"
 
-	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
 //var HttpPort int
 
-type LookoutHandler struct {
-	PromPath  string
-	HttpPort  int
-	run       bool
-	CTLPath   string
-	Statb     syscall.Stat_t
-	Epc       *EPContainer
-	EpWatcher *fsnotify.Watcher
-}
-
-type lookout_state int
+type lookoutState int
 
 const (
-	BOOTING lookout_state = iota
+	BOOTING lookoutState = iota
 	RUNNING
 	SHUTDOWN
 )
 
-// XXX move to LookoutHandler?
-var lookoutState lookout_state = BOOTING
+func (s lookoutState) String() string {
+	switch s {
+	case BOOTING:
+		return "booting"
+	case RUNNING:
+		return "running"
+	case SHUTDOWN:
+		return "shutdown"
+	default:
+		break
+	}
+	return "unknown"
+}
 
-func LookoutWaitUntilReady() {
-	for lookoutState != RUNNING {
-		xlog.Debug("waiting for RUNNING")
+type LookoutInotify struct {
+	ifd   int
+	wd    int32             // watch descriptor for this LookoutHandler
+	wmap  map[int32]*NcsiEP // for endpoints
+	mutex sync.Mutex
+}
+
+type LookoutHandler struct {
+	PromPath string
+	HttpPort int
+	CTLPath  string
+	Statb    syscall.Stat_t
+	Epc      *EPContainer
+	lsofGen  uint64
+	state    lookoutState
+	inotify  LookoutInotify
+}
+
+func (h *LookoutHandler) LookoutWaitUntilState(s lookoutState) {
+	for h.state != s {
+		xlog.Debugf("waiting for %s", s.String())
 		time.Sleep(1 * time.Second)
+	}
+}
+
+func (h *LookoutHandler) lookoutLsof() error {
+	procEntries, err := os.ReadDir("/proc")
+	if err != nil {
+		return err
+	}
+
+	h.lsofGen++
+
+	for _, e := range procEntries {
+		pid := e.Name()
+		if !e.IsDir() || pid[0] < '0' || pid[0] > '9' {
+			continue
+		}
+
+		fdDir := filepath.Join("/proc", pid, "fd")
+		fds, err := os.ReadDir(fdDir)
+		if err != nil {
+			continue // probably not accessible
+		}
+
+		for _, fd := range fds {
+			lnk, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
+
+			if err != nil {
+				continue
+			}
+
+			if !strings.HasPrefix(lnk, h.CTLPath) {
+				continue
+			}
+
+			dir := filepath.Dir(lnk)   // /tmp/.niova/<uuid>/input
+			base := filepath.Base(dir) // <uuid>
+			if u, err := uuid.Parse(base); err == nil {
+				// Try to find the endpoint at this uuid
+				h.Epc.LsofGenAddOrUpdateEp(h, u)
+
+				break // Only need to process the first found
+			}
+		}
+	}
+
+	return nil
+}
+
+func (h *LookoutHandler) monitorLsof() {
+
+	sleepTime := 60 * time.Second
+
+	for h.state != SHUTDOWN {
+		time.Sleep(sleepTime)
+
+		h.lookoutLsof()
 	}
 }
 
@@ -49,9 +126,12 @@ func (h *LookoutHandler) monitor() error {
 	var err error = nil
 	var sleepTime time.Duration
 
-	if lookoutState != BOOTING {
+	if h.state != BOOTING {
 		panic("Invalid lookoutState")
 	}
+
+	xlog.Info("RUNNING")
+	h.state = RUNNING
 
 	sleepEnv := os.Getenv("LOOKOUT_SLEEP")
 	if sleepEnv != "" {
@@ -67,14 +147,9 @@ func (h *LookoutHandler) monitor() error {
 
 	xlog.Info("Lookout monitor sleep time: ", sleepTime)
 
-	for h.run == true {
+	for h.state != SHUTDOWN {
+		h.Epc.CleanEPs()
 		h.Epc.PollEPs()
-
-		// Perform one endpoint poll before entering RUNNING mode
-		if lookoutState == BOOTING {
-			xlog.Debug("enter RUNNING")
-			lookoutState = RUNNING
-		}
 
 		time.Sleep(sleepTime)
 	}
@@ -100,59 +175,194 @@ func (h *LookoutHandler) writePromPath() error {
 	return nil
 }
 
-func (h *LookoutHandler) epOutputWatcher() {
-	for {
-		select {
-		case event := <-h.EpWatcher.Events:
-
-			if event.Op == fsnotify.Create {
-				h.processEvent(&event)
-			}
-
-			// watch for errors
-		case err := <-h.EpWatcher.Errors:
-			xlog.Error("EpWatcher pipe: ", err)
-
-		}
-	}
+type inotifyEvent struct {
+	Name  string
+	Event unix.InotifyEvent
 }
 
-const (
-	EV_TYPE_INVALID     = iota // The event does match known event types
-	EV_TYPE_EP_REGISTER        // New EPs entering the ctl-interface
-	EV_TYPE_EP_DATA            // Existing EPs producing data
-)
+func (h *LookoutHandler) epInotifyWatch() {
 
-const (
-	EV_PATHDEPTH_UUID        = 3
-	EV_PATHDEPTH_EP_REGISTER = EV_PATHDEPTH_UUID
-	EV_PATHDEPTH_EP_DATA     = 5
-)
+	buf := make([]byte, 4096)
 
-func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
+	for h.state != SHUTDOWN {
 
-	tevnam := strings.Split(event.Name, "/") // tokenized event name
-	//	var evtype = EV_TYPE_INVALID
-	var pdepth = len(tevnam) - 1
+		n, err := unix.Read(h.inotify.ifd, buf)
+		if err != nil {
+			if err == unix.EAGAIN || err == unix.EINTR {
+				// no events available, just continue
+				continue
+			} else {
+				xlog.Fatalf("unix.Read(): %v", err)
+			}
+		}
 
-	epUuid, err := uuid.Parse(tevnam[EV_PATHDEPTH_UUID])
+		var off uint32
+		for off <= uint32(n-unix.SizeofInotifyEvent) {
+			ev := (*unix.InotifyEvent)(unsafe.Pointer(&buf[off]))
+			nameBytes := buf[off+unix.SizeofInotifyEvent : off+unix.SizeofInotifyEvent+ev.Len]
+			name := string(bytes.TrimRight(nameBytes, "\x00"))
 
-	xlog.Debugf("event=%s, splitpath=%s, len=%d uuid-err=%v",
-		event.Name, tevnam, len(tevnam), err)
+			off += unix.SizeofInotifyEvent + ev.Len
 
-	if err != nil {
-		xlog.Error("ep uuid.Parse(): ", err)
-		return
+			ievent := inotifyEvent{
+				Name:  name,
+				Event: *ev, // copy struct value
+			}
+
+			xlog.Infof("ievent=%v", ievent)
+
+			h.processEvent(&ievent)
+		}
 	}
 
-	// Note that this switch may need to handle 2 items w/ the same depth
-	switch pdepth {
-	case EV_PATHDEPTH_EP_DATA:
-		evfile := tevnam[EV_PATHDEPTH_EP_DATA]
+	buf = nil
+}
+
+func (h *LookoutHandler) EpWatchAdd(ep *NcsiEP, events uint32) error {
+	if h.inotify.ifd == -1 || h.inotify.wd == -1 {
+		xlog.Fatal("Inotify FDs have not been initialized")
+	}
+
+	infy := &h.inotify
+
+	if ep == nil {
+		return unix.EINVAL
+	}
+
+	if ep.wid != -1 {
+		return unix.EBUSY
+	}
+
+	// Lock map
+	infy.mutex.Lock()
+	defer infy.mutex.Unlock()
+
+	wid, err :=
+		unix.InotifyAddWatch(h.inotify.ifd, ep.Xpath(EP_PATH_OUTPUT),
+			events)
+
+	if err != nil {
+		return err
+	}
+
+	xlog.FatalIF((wid < 0),
+		"unix.InotifyAddWatch() succeeded but wid=%d < 0", wid)
+
+	if infy.wmap[int32(wid)] != nil {
+		ep.Log(xlog.FATAL, "ep already exists at wid=%d", wid)
+	}
+
+	ep.wid = int32(wid)
+	infy.wmap[int32(wid)] = ep
+
+	ep.Log(xlog.INFO, "ok")
+
+	return nil
+}
+
+func (h *LookoutHandler) EpWatchRemove(ep *NcsiEP) {
+	if h.inotify.ifd == -1 || h.inotify.wd == -1 || ep == nil {
+		xlog.Fatal("Inotify FDs have not been initialized")
+	}
+
+	if ep.wid < 0 {
+		ep.Log(xlog.FATAL, "ep is not being watched")
+	}
+
+	infy := &h.inotify
+
+	// Lock map
+	infy.mutex.Lock()
+	defer infy.mutex.Unlock()
+
+	xep, ok := infy.wmap[ep.wid]
+	if !ok {
+		ep.Log(xlog.FATAL, "ep does not exist in map")
+	}
+
+	if ep != xep {
+		xep.Log(xlog.ERROR, "this ep was found when..")
+		ep.Log(xlog.FATAL, ".. this one was expected")
+	}
+
+	delete(infy.wmap, ep.wid)
+
+	ep.wid = -1
+
+	unix.InotifyRmWatch(h.inotify.ifd, uint32(ep.wid))
+}
+
+func (h *LookoutHandler) epWatchLookup(event *inotifyEvent) *NcsiEP {
+	infy := &h.inotify
+
+	infy.mutex.Lock()
+	defer infy.mutex.Unlock()
+
+	ep, ok := infy.wmap[event.Event.Wd]
+
+	if !ok {
+		return nil
+	}
+
+	ep.Log(xlog.INFO, "")
+
+	return ep
+}
+
+func (h *LookoutHandler) epInotifyStart() {
+	h.inotify.ifd = -1
+	h.inotify.wd = -1
+
+	var err error
+
+	h.inotify.wmap = make(map[int32](*NcsiEP))
+
+	h.inotify.ifd, err = unix.InotifyInit()
+
+	xlog.FatalIF((err != nil || h.inotify.ifd < 0),
+		"unix.InotifyInit(): %v (ifd=%d)", err, h.inotify.ifd)
+
+	var wid int
+
+	// Add watch only for CREATE events
+	wid, err = unix.InotifyAddWatch(h.inotify.ifd, h.CTLPath,
+		unix.IN_CREATE|unix.IN_ATTRIB)
+
+	xlog.FatalIF((err != nil || wid < 0), "unix.InotifyAddWatch(): %v", err)
+
+	h.inotify.wd = int32(wid)
+
+	go h.epInotifyWatch()
+}
+
+func (h *LookoutHandler) processEvent(e *inotifyEvent) {
+
+	xlog.Infof("%v", e)
+
+	if e.Event.Wd == h.inotify.wd {
+		epUuid, err := uuid.Parse(e.Name)
+		if err != nil {
+			xlog.Error("cmd uuid.Parse(): ", err)
+			return
+		}
+
+		xlog.Infof("h.Epc.AddEp(): ep-uuid: %s", epUuid.String())
+
+		h.Epc.AddEp(h, epUuid)
+
+	} else {
+		evfile := e.Name
+
+		ep := h.epWatchLookup(e)
+
+		if ep == nil {
+			xlog.Warnf("Failed to find ep@wid=%d", e.Event.Wd)
+			return
+		}
 
 		//temp file exclusion
 		if strings.HasPrefix(evfile, ".") {
-			xlog.Tracef("skipping ctl-interface temp file: %s",
+			xlog.Debugf("skipping ctl-interface temp file: %s",
 				evfile)
 			return
 		}
@@ -171,136 +381,43 @@ func (h *LookoutHandler) processEvent(event *fsnotify.Event) {
 			return
 		}
 
-		xlog.Infof("ev-complete: ep-uuid: %s, cmd-uuid=%s",
-			epUuid.String(), cmdUuid.String())
-
-		// XXX need to explore this!
-		//h.Epc.HandleHttpQuery(evfile, uuid)
-		h.Epc.Process(epUuid, cmdUuid)
-
-	case EV_PATHDEPTH_EP_REGISTER:
-		h.tryAdd(epUuid)
+		ep.Log(xlog.INFO, "ev-complete: cmd-uuid=%s", cmdUuid.String())
+		ep.Complete(cmdUuid, nil)
 	}
-}
-
-func (h *LookoutHandler) scan() {
-
-	if lookoutState != BOOTING {
-		panic("scan() only allowed during bootup")
-	}
-
-	files, err := ioutil.ReadDir(h.CTLPath)
-	if err != nil {
-		xlog.Fatal("ioutil.ReadDir():", err)
-	}
-
-	for _, file := range files {
-		if uuid, err := uuid.Parse(file.Name()); err == nil {
-			if (h.Epc.MonitorUUID == "*") ||
-				(h.Epc.MonitorUUID == uuid.String()) {
-				h.tryAdd(uuid)
-			}
-		}
-	}
-}
-
-func (h *LookoutHandler) tryAdd(epUuid uuid.UUID) {
-	x := h.Epc.Lookup(epUuid)
-
-	if x != nil {
-		xlog.Infof("ep=%s (state=%s) already exists",
-			epUuid.String(), x.State.String())
-		return
-	}
-
-	path := h.CTLPath + "/" + epUuid.String()
-
-	// Ensure the member is directory before proceeding
-	stat, xerr := os.Lstat(path)
-	if xerr != nil {
-		xlog.Infof("lstat(%s) failed: %s", path, xerr)
-		return
-	}
-	if !stat.IsDir() {
-		xlog.Infof("Path %s is not a directory", path)
-		return
-	}
-
-	// Create new object
-	ep := NcsiEP{
-		Uuid:        epUuid,
-		Path:        path,
-		LastReport:  time.Now(),
-		State:       EPstateInit,
-		pendingCmds: make(map[uuid.UUID]*epCommand),
-		App:         &applications.Unrecognized{},
-	}
-
-	if err := h.EpWatcher.Add(ep.Path + "/output"); err != nil {
-		xlog.Fatal("Watcher.Add() failed:", err)
-	}
-
-	h.Epc.UpdateEpMap(epUuid, &ep)
-
-	ep.Log(xlog.INFO, "incoming ep")
-}
-
-func (h *LookoutHandler) init() error {
-	// Check the provided endpoint root path
-	err := syscall.Stat(h.CTLPath, &h.Statb)
-	if err != nil {
-		return err
-	}
-
-	// Set path (Xxx still need to check if this is a directory or not)
-
-	err = h.Epc.InitializeEpMap()
-	if err != nil {
-		return err
-	}
-
-	h.EpWatcher, err = fsnotify.NewWatcher()
-	if err != nil {
-		return err
-	}
-
-	xlog.Info("fsnotify watch: ", h.CTLPath)
-	err = h.EpWatcher.Add(h.CTLPath)
-	if err != nil {
-		h.EpWatcher.Close()
-		return err
-	}
-
-	h.run = true
-
-	go h.epOutputWatcher()
-
-	h.scan()
-
-	return nil
 }
 
 func (h *LookoutHandler) Start() error {
+
 	var err error
+
+	// Check the provided endpoint root path
+	if err = syscall.Stat(h.CTLPath, &h.Statb); err != nil {
+		xlog.Error("syscall.Stat(%s): ", h.CTLPath, err)
+		return err
+	}
+
+	if err = h.Epc.InitializeEpMap(); err != nil {
+		xlog.Error("h.Epc.InitializeEpMap(): ", err)
+		return err
+	}
+
+	h.epInotifyStart()
+
 	h.Epc.HttpQuery = make(map[string](chan []byte))
 
-	err = h.writePromPath()
-	if err != nil {
-		return err
-	}
-	//Setup lookout
-	xlog.Info("Initializing Lookout")
-	err = h.init()
-	if err != nil {
-		xlog.Debug("Lookout Init - ", err)
+	if err = h.writePromPath(); err != nil {
+		xlog.Error("h.writePromPath(): ", err)
 		return err
 	}
 
-	//Start monitoring
-	xlog.Info("Starting Monitor")
-	err = h.monitor()
-	if err != nil {
-		xlog.Debug("Lookout Monitor - ", err)
+	// Run the lsof scan to determine alive niova processes
+	h.lookoutLsof()
+
+	go h.monitorLsof()
+
+	// Start monitoring
+	if err = h.monitor(); err != nil {
+		xlog.Error("h.monitor(): ", err)
 		return err
 	}
 

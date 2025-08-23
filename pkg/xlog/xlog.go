@@ -125,6 +125,18 @@ func WithDepth(level int, depth int, format string, args ...interface{}) {
 	}
 }
 
+func FatalIfErr(err error, format string, args ...interface{}) {
+
+	if err != nil {
+		WithDepth(FATAL, 1, format, args)
+	}
+}
+
+func FatalIF(cond bool, format string, args ...interface{}) {
+	if cond {
+		WithDepth(FATAL, 1, format, args...)
+	}
+}
 func IsLevelEnabled(level int) bool {
 	switch level {
 	case TRACE:
@@ -181,6 +193,7 @@ func (f *MyFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 		fn = runtime.FuncForPC(pc)
 
 		if !strings.Contains(fn.Name(), "logrus") &&
+			!strings.Contains(fn.Name(), "Logger") &&
 			!strings.Contains(fn.Name(), "xlog") {
 			if depth == 0 {
 				fileBase = path.Base(file)

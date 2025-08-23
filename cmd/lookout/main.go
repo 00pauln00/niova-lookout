@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 
 	"github.com/00pauln00/niova-lookout/pkg/communication"
 	"github.com/00pauln00/niova-lookout/pkg/monitor"
@@ -44,8 +43,8 @@ func (handler *handler) parseCMDArgs() {
 	showHelpShort = flag.Bool("h", false, "")
 	showHelp = flag.Bool("help", false, "print help")
 
-	logLevel = flag.String("log", "info",
-		"set log level (panic, fatal, error, warn, info, debug, trace)")
+	logLevel = flag.String("log", "warn",
+		"set log level (error, warn, info, debug, trace)")
 
 	flag.BoolVar(&handler.standalone, "std", false,
 		"Set flag to true to run lookout standalone for NISD")
@@ -72,7 +71,6 @@ func (handler *handler) parseCMDArgs() {
 	flag.StringVar(&handler.promPath, "pr", "./targets.json",
 		"Prometheus targets info")
 
-	flag.StringVar(&handler.coms.SerfLogger, "s", "serf.log", "Serf logs")
 	flag.StringVar(&lookoutLogger, "l", "", "Lookout logs")
 	flag.StringVar(&handler.coms.RaftUUID, "r", "", "Raft UUID")
 	flag.StringVar(&handler.coms.LookoutUUID, "lu", uuid.NewString(),
@@ -86,7 +84,7 @@ func (handler *handler) parseCMDArgs() {
 
 	nonParsed := flag.Args()
 	if len(nonParsed) > 0 {
-		logrus.Debugf("Unexpected argument found: %s", nonParsed[0])
+		xlog.Debugf("Unexpected argument found: %s", nonParsed[0])
 		usage(1)
 	}
 
@@ -115,39 +113,39 @@ func main() {
 	var portAddr *int
 	var err error
 
-	//Get cmd line args
-	handler.parseCMDArgs()
-
 	//Initialize communication handler
 	handler.coms = communication.CommHandler{}
+
+	//Get cmd line args
+	handler.parseCMDArgs()
 
 	if handler.coms.GossipNodesPath != "" {
 		err = handler.coms.LoadConfigInfo()
 		if err != nil {
-			logrus.Fatal("Error while loading config info - ", err)
+			xlog.Fatal("Error while loading config info - ", err)
 		}
 	} else {
 		handler.coms.PortRange = make([]uint16, 1)
 	}
 
 	if !handler.standalone {
-		logrus.Trace("Starting Serf")
+		xlog.Info("Starting Serf")
 
 		//Start serf agent
 		err = handler.coms.StartSerfAgent()
 		if err != nil {
-			logrus.Fatal("Error while starting serf agent: ", err)
+			xlog.Fatal("Error while starting serf agent: ", err)
 		}
 
 		if handler.pmdb {
-			logrus.Trace("Starting Client API for PMDB")
+			xlog.Info("Starting Client API for PMDB")
 			handler.coms.StartClientAPI()
 			go handler.coms.StartUDPListner()
 		}
 	}
 
 	//Start lookout monitoring
-	logrus.Debug("Port Range: ", handler.coms.PortRange)
+	xlog.Debug("Port Range: ", handler.coms.PortRange)
 	portAddr = &RecvdPort
 	handler.epc = monitor.EPContainer{
 		MonitorUUID: "*",
@@ -168,7 +166,7 @@ func main() {
 	handler.coms.HttpPort = handler.httpPort
 
 	go func() {
-		logrus.Info("Starting http server")
+		xlog.Info("Starting http server")
 		err_r := handler.coms.ServeHttp()
 		errs <- err_r
 		if <-errs != nil {
@@ -177,7 +175,7 @@ func main() {
 	}()
 	if err := <-errs; err != nil {
 		*handler.coms.RetPort = -1
-		logrus.Fatal("Error while starting http server : ", err)
+		xlog.Fatal("Error while starting http server : ", err)
 	}
 
 	if !handler.standalone {
@@ -188,9 +186,9 @@ func main() {
 	}
 
 	//Start lookout
-	logrus.Info("Starting lookout")
+	xlog.Info("Starting lookout")
 	er := handler.lookout.Start()
 	if er != nil {
-		logrus.Fatal("Error while starting Lookout : ", er)
+		xlog.Fatal("Error while starting Lookout : ", er)
 	}
 }

@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/xlog"
 )
 
@@ -19,6 +19,7 @@ type EPContainer struct {
 	HttpQuery        map[string](chan []byte)
 }
 
+//XXX this looks sketchy
 func (epc *EPContainer) GetList() map[uuid.UUID]*NcsiEP {
 	epc.mutex.Lock()
 	defer epc.mutex.Unlock()
@@ -36,21 +37,45 @@ func (epc *EPContainer) MarkAlive(serviceUUID string) error {
 		svc.pendingCmds = make(map[uuid.UUID]*epCommand)
 
 		svc.ChangeState(EPstateRunning)
-		svc.LastReport = time.Now()
 	}
 	return nil
 }
 
-// XXX this should not just blast through them, it should try to use the entire
-// timeout period
-func (epc *EPContainer) PollEPs() {
+func (epc *EPContainer) CleanEPs() {
+	epc.mutex.Lock()
+	defer epc.mutex.Unlock()
+
 	for _, ep := range epc.epMap {
-		// only check liveness for local EPs
+
+		// Flush all expired cmds
+		ep.flushStaleCmds()
 		ep.RemoveStaleFiles()
 
-		err := ep.Detect()
+		if ep.State == EPstateRunning && ep.LastSeenIsStale() {
+			ep.ChangeState(EPstateDown)
+
+		} else if ep.LsofGenIsStale() {
+			// Items that eligible for Removing state
+			if ep.State == EPstateRunning {
+				ep.Log(xlog.WARN,
+					"running ep has expired lsof gen")
+			} else {
+				ep.ChangeState(EPstateRemoving)
+			}
+		}
+	}
+}
+
+// At some point we may want to issue the cmds to a priority heap so their
+// submission can be spread out over time
+func (epc *EPContainer) PollEPs() {
+	epc.mutex.Lock()
+	defer epc.mutex.Unlock()
+
+	for _, ep := range epc.epMap {
+		err := ep.Poll()
 		if err != nil {
-			xlog.Error("ep.Detect(): ", err)
+			xlog.Error("ep.Poll(): ", err)
 		}
 	}
 }
@@ -73,8 +98,7 @@ func (epc *EPContainer) PollEPs() {
 // }
 
 func (epc *EPContainer) Process(epUuid uuid.UUID, cmdUuid uuid.UUID) {
-
-	if ep := epc.epMap[epUuid]; ep != nil {
+	if ep := epc.Lookup(epUuid); ep != nil {
 		ep.Complete(cmdUuid, nil)
 	}
 }
@@ -95,11 +119,58 @@ func (epc *EPContainer) TakeSnapshot() map[uuid.UUID]*NcsiEP {
 	return nodeMap
 }
 
-func (epc *EPContainer) UpdateEpMap(uuid uuid.UUID, newlns *NcsiEP) {
+func (epc *EPContainer) AddEp(lh *LookoutHandler, epUuid uuid.UUID) bool {
 	epc.mutex.Lock()
 	defer epc.mutex.Unlock()
 
-	epc.epMap[uuid] = newlns
+	// Update the Gen regardless
+	if xep := epc.epMap[epUuid]; xep != nil {
+		xep.LsofGenUpdate(lh.lsofGen)
+
+		var newState = xep.State
+
+		// Note that ep's which are down but are still detected by lsof
+		// will be held in the down position.  The can be brought back
+		// to 'running' via Poll
+		switch xep.State {
+		case EPstateRemoving:
+			newState = EPstateInit
+		case EPstateUnknown:
+			newState = EPstateInit
+		default:
+		}
+
+		if newState != xep.State {
+			xep.ChangeState(newState)
+		}
+
+		return false
+	}
+
+	// Create new object
+	ep := NcsiEP{
+		Uuid:        epUuid,
+		lh:          lh,
+		State:       EPstateUnknown,
+		pendingCmds: make(map[uuid.UUID]*epCommand),
+		App:         &applications.Unrecognized{},
+		lsofGen:     lh.lsofGen,
+		wid:         -1,
+	}
+
+	ep.ChangeState(EPstateInit)
+
+	epc.epMap[epUuid] = &ep
+
+	return true
+}
+
+func (epc *EPContainer) LsofGenAddOrUpdateEp(lh *LookoutHandler,
+	epUuid uuid.UUID) {
+
+	addedHere := epc.AddEp(lh, epUuid)
+
+	xlog.Debugf("%s: added here? %v", epUuid.String(), addedHere)
 }
 
 func (epc *EPContainer) JsonMarshal(state Epstate) []byte {
@@ -107,6 +178,7 @@ func (epc *EPContainer) JsonMarshal(state Epstate) []byte {
 	var err error
 
 	epc.mutex.Lock()
+	defer epc.mutex.Unlock()
 
 	if state == EPstateAny {
 		jsonData, err = json.MarshalIndent(epc.epMap, "", "\t")
@@ -116,15 +188,13 @@ func (epc *EPContainer) JsonMarshal(state Epstate) []byte {
 		filtered := make(map[uuid.UUID]*NcsiEP)
 		for k, v := range epc.epMap {
 			if v.State == state {
-				xlog.Debug("Adding ep: ", v)
+				v.Log(xlog.TRACE, "including in http reply")
 				filtered[k] = v
 			}
 		}
 		jsonData, err = json.MarshalIndent(filtered, "", "\t")
 		filtered = nil
 	}
-
-	epc.mutex.Unlock()
 
 	if err != nil {
 		return nil

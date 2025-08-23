@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sys/unix"
 
 	"github.com/00pauln00/niova-lookout/pkg/monitor/applications"
 	"github.com/00pauln00/niova-lookout/pkg/xlog"
@@ -56,6 +57,8 @@ func (s Epstate) String() string {
 		return "down"
 	case EPstateRemoving:
 		return "removing"
+	case EPstateAny:
+		return "any"
 	default:
 		return "unknown"
 	}
@@ -63,27 +66,23 @@ func (s Epstate) String() string {
 
 type NcsiEP struct {
 	App          applications.AppIF       `json:"-"`
-	Uuid         uuid.UUID                `json:"-"`
-	Path         string                   `json:"-"`
+	Uuid         uuid.UUID                `json:"uuid"`
 	Name         string                   `json:"name"`
 	NiovaSvcType string                   `json:"type"`
 	Port         int                      `json:"port"`
-	LastReport   time.Time                `json:"-"`
+	LastSeen     time.Time                `json:"last_seen"`
 	State        Epstate                  `json:"state"`
 	EPInfo       applications.CtlIfOut    `json:"ep_info"` //May need to change this to a pointer
 	pendingCmds  map[uuid.UUID]*epCommand `json:"-"`
 	Mutex        sync.Mutex               `json:"-"`
+	lh           *LookoutHandler          `json:"-"`
+	lsofGen      uint64                   `json:"-"`
+	watched      bool                     `json:"-"`
+	wid          int32                    `json:"-"` // watch descriptor id
 }
 
-func (ep *NcsiEP) ChangeState(s Epstate) {
-	if s != ep.State {
-
-		old := ep.State
-
-		ep.State = s
-
-		ep.LogWithDepth(xlog.WARN, 1, "old-state=%s", old.String())
-	}
+func (s Epstate) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String()) // assuming Epstate has a String() method
 }
 
 type epCommand struct {
@@ -93,14 +92,23 @@ type epCommand struct {
 	outJSON []byte
 	err     error
 	op      applications.EPcmdType
+	start   time.Time
 }
 
+type EpPath string
+
+const (
+	EP_PATH_ROOT   EpPath = ""
+	EP_PATH_INPUT  EpPath = "/input/"
+	EP_PATH_OUTPUT EpPath = "/output/"
+)
+
 func (c *epCommand) getOutFnam() string {
-	return c.ep.epRoot() + "/output/" + LookoutPrefixStr + c.id.String()
+	return c.ep.Xpath(EP_PATH_OUTPUT) + LookoutPrefixStr + c.id.String()
 }
 
 func (c *epCommand) getInFnam() string {
-	return c.ep.epRoot() + "/input/" + LookoutPrefixStr + c.id.String()
+	return c.ep.Xpath(EP_PATH_INPUT) + LookoutPrefixStr + c.id.String()
 }
 
 func (c *epCommand) getCmdBuf() []byte {
@@ -148,6 +156,12 @@ func (c *epCommand) prep() {
 	c.ep.addCmd(c)
 }
 
+func (c *epCommand) cmdIsStale() bool {
+	if time.Since(c.start) > time.Second*EPtimeoutSec {
+		return true
+	}
+	return false
+}
 func (c *epCommand) write() {
 }
 
@@ -174,29 +188,139 @@ func (c *epCommand) submit() {
 	}
 }
 
-func (ep *NcsiEP) mayQueueCmd() bool {
-	ep.Log(xlog.DEBUG, "")
-
-	// Enforces a max queue depth of 1 for internal scheduling logic,
-	// while still allowing externally-triggered commands (e.g., via /v1/)
-	// to be processed.
-	if len(ep.pendingCmds) > 0 {
-		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
-			xlog.Debugf("ep %s has stale cmds (%f seconds), removing them from the queue",
-				ep.Uuid, EPtimeoutSec)
-
-			for x := range ep.pendingCmds {
-				ep.removeCmd(x)
-			}
-
-			if ep.State == EPstateInit {
-				ep.ChangeState(EPstateRemoving)
-			} else {
-				ep.ChangeState(EPstateDown)
-			}
-		}
+func isWatchedState(s Epstate) bool {
+	switch s {
+	case EPstateRemoving:
+		return false
+	case EPstateUnknown:
+		return false
+	case EPstateAny:
+		return false
+	default:
+		break
 	}
-	return len(ep.pendingCmds) == 0
+
+	return true
+}
+
+func (ep *NcsiEP) ensureWatchedState() {
+	if ep.watched != isWatchedState(ep.State) {
+		ep.LogWithDepth(xlog.FATAL, 1,
+			"invalid state for being watched")
+	}
+}
+
+// Called when upon a state is *changing*.  ChangeState() is the only allowed
+// caller.
+func (ep *NcsiEP) watchCtl(newState Epstate) {
+
+	iws := isWatchedState(newState)
+
+	if iws == ep.watched {
+		return
+	}
+
+	var action string
+	var err error
+
+	if iws {
+		action = "Add"
+		err = ep.lh.EpWatchAdd(ep, unix.IN_MOVE_SELF|unix.IN_MOVED_TO)
+
+		xlog.FatalIfErr(err, "ep.lh.EpWatchAdd(): %v", err)
+	} else {
+		action = "Remove"
+		ep.lh.EpWatchRemove(ep)
+	}
+
+	if err != nil {
+		ep.Log(xlog.ERROR, "Watcher.%s() failed: %v",
+			action, err)
+	}
+	ep.watched = iws
+
+	ep.Log(xlog.INFO, "watch state changed (id=%d)-> %s", action, ep.wid)
+}
+
+func (ep *NcsiEP) ChangeState(s Epstate) {
+	if s == EPstateAny {
+		ep.LogWithDepth(xlog.FATAL, 1,
+			"%s is not a settable state", s.String())
+	}
+
+	if s != ep.State {
+		old := ep.State
+
+		ep.ensureWatchedState()
+		ep.watchCtl(s)
+
+		ep.State = s
+
+		switch s {
+		case EPstateInit:
+			ep.LastSeen = time.Now()
+		case EPstateRunning:
+			ep.LastSeen = time.Now()
+		case EPstateHasIdentity:
+			ep.LastSeen = time.Now()
+		}
+
+		ep.LogWithDepth(xlog.WARN, 1, "old-state=%s", old.String())
+	}
+}
+
+func (ep *NcsiEP) Xpath(p EpPath) string {
+	path := ep.lh.CTLPath + "/" + ep.Uuid.String() + string(p)
+
+	ep.LogWithDepth(xlog.DEBUG, 1, "%s", path)
+
+	return path
+}
+
+func (ep *NcsiEP) LsofGenUpdate(gen uint64) {
+	if ep.lsofGen > gen {
+		ep.Log(xlog.FATAL, "ep_gen is > %d", gen)
+
+	} else if ep.lsofGen == gen {
+		return
+	}
+
+	ep.lsofGen = gen
+	ep.LogWithDepth(xlog.INFO, 1, "update lsofGen")
+}
+
+func (ep *NcsiEP) flushStaleCmds() {
+	for x := range ep.pendingCmds {
+		ep.removeCmd(x, false)
+	}
+}
+
+func (ep *NcsiEP) flushAllCmds() {
+	for x := range ep.pendingCmds {
+		ep.removeCmd(x, true)
+	}
+}
+
+func (ep *NcsiEP) LsofGenIsStale() bool {
+	if ep.lsofGen+1 < ep.lh.lsofGen {
+		return true
+	}
+	return false
+}
+
+func (ep *NcsiEP) LastSeenIsStale() bool {
+	if time.Since(ep.LastSeen) > time.Second*EPtimeoutSec {
+		return true
+	}
+	return false
+}
+
+func (ep *NcsiEP) mayQueueCmd() bool {
+	qok := len(ep.pendingCmds) == 0
+
+	ep.Log(xlog.DEBUG, "mayQueue=%v", qok)
+
+	return qok
 }
 
 func (ep *NcsiEP) addCmd(cmd *epCommand) error {
@@ -204,6 +328,7 @@ func (ep *NcsiEP) addCmd(cmd *epCommand) error {
 	cmd.ep.Mutex.Lock()
 	_, exists := cmd.ep.pendingCmds[cmd.id]
 	if exists == false {
+		cmd.start = time.Now()
 		cmd.ep.pendingCmds[cmd.id] = cmd
 	}
 	cmd.ep.Mutex.Unlock()
@@ -215,20 +340,19 @@ func (ep *NcsiEP) addCmd(cmd *epCommand) error {
 	return nil
 }
 
-func (ep *NcsiEP) removeCmd(cmdUUID uuid.UUID) *epCommand {
+func (ep *NcsiEP) removeCmd(cmdUUID uuid.UUID, force bool) *epCommand {
 	ep.Mutex.Lock()
 	c, ok := ep.pendingCmds[cmdUUID]
 	if ok {
-		delete(ep.pendingCmds, cmdUUID)
-		ep.Log(xlog.INFO, "removed cmd %s", cmdUUID.String())
+		if force || c.cmdIsStale() {
+			delete(ep.pendingCmds, cmdUUID)
+			ep.Log(xlog.INFO, "removed cmd %s (force=%v)",
+				cmdUUID.String(), force)
+		}
 	}
 	ep.Mutex.Unlock()
 
 	return c
-}
-
-func (ep *NcsiEP) epRoot() string {
-	return ep.Path
 }
 
 // func (ep *NcsiEP) CtlCustomQuery(customCMD string, ID string) error {
@@ -241,7 +365,7 @@ func (ep *NcsiEP) epRoot() string {
 func (ep *NcsiEP) update(ctlData applications.CtlIfOut) {
 	ep.App.SetCtlIfOut(ctlData)
 	ep.EPInfo = ep.App.GetCtlIfOut()
-	ep.LastReport = time.Now()
+	ep.LastSeen = time.Now()
 
 	if ep.State != EPstateRunning {
 		ep.ChangeState(EPstateRunning)
@@ -251,13 +375,15 @@ func (ep *NcsiEP) update(ctlData applications.CtlIfOut) {
 func (ep *NcsiEP) LogWithDepth(level int, depth int, format string,
 	args ...interface{}) {
 	// Common prefix fields
-	prefixFormat := "%s@%s s=%s pc=%d age=%s"
+	prefixFormat := "%s@%s s=%s pc=%d age=%s lg=%d wid=%d"
 	prefixArgs := []interface{}{
 		ep.App.GetAppName(),
 		ep.Uuid.String(),
 		ep.State.String(),
 		len(ep.pendingCmds),
-		time.Since(ep.LastReport).Truncate(time.Millisecond),
+		time.Since(ep.LastSeen).Truncate(time.Millisecond),
+		ep.lsofGen,
+		ep.wid,
 	}
 
 	var combinedFmt string
@@ -285,14 +411,19 @@ func (ep *NcsiEP) Log(level int, format string, args ...interface{}) {
 }
 
 func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
-	c := ep.removeCmd(cmdUuid)
+	c := ep.removeCmd(cmdUuid, true)
 	if c == nil {
 		return syscall.ENOENT
 	}
 
 	c.loadOutfile()
 	if c.err != nil {
+		ep.Log(xlog.WARN, "c.loadOutfile(): %v", c.err)
 		return c.err
+	}
+
+	if ep.State == EPstateDown {
+		ep.ChangeState(EPstateRunning)
 	}
 
 	var err error
@@ -300,7 +431,11 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 	switch c.op {
 	case applications.SystemInfoOp:
 		fallthrough
+	case applications.NCLIENTInfoOp:
+		fallthrough
 	case applications.NISDInfoOp:
+		ep.Log(xlog.DEBUG, "op=%d", c.op)
+
 		var err error
 		var ctlifout applications.CtlIfOut
 		if err = json.Unmarshal(c.getOutJSON(), &ctlifout); err != nil {
@@ -326,8 +461,17 @@ func (ep *NcsiEP) Complete(cmdUuid uuid.UUID, output *[]byte) error {
 	case applications.IdentifyOp:
 		ep.App, err = applications.DetermineApp(c.getOutJSON())
 
+		ep.Log(xlog.DEBUG, "IdentifyOp")
+
 		if err == nil {
 			ep.App.SetUUID(ep.Uuid)
+			ep.NiovaSvcType = ep.App.GetAppName()
+			ep.Name = ep.App.GetAltName()
+			if ep.Name == "" {
+				ep.Name = ep.NiovaSvcType + "-" +
+					ep.Uuid.String()[:6]
+			}
+
 			ep.ChangeState(EPstateHasIdentity)
 			ep.queryApp()
 		} else {
@@ -384,16 +528,14 @@ func (ep *NcsiEP) removeFiles(folder string) {
 }
 
 func (ep *NcsiEP) RemoveStaleFiles() {
-	//Remove stale ctl files
-	input_path := ep.Path + "/input/"
-	ep.removeFiles(input_path)
-	//output files
-	output_path := ep.Path + "/output/"
-	ep.removeFiles(output_path)
+	if isWatchedState(ep.State) {
+		ep.removeFiles(ep.Xpath(EP_PATH_INPUT))
+		ep.removeFiles(ep.Xpath(EP_PATH_OUTPUT))
+	}
 }
 
 // Called every sleep time (default 20 seconds) to check if the endpoint is alive
-func (ep *NcsiEP) Detect() error {
+func (ep *NcsiEP) Poll() error {
 	var err error
 
 	switch ep.State {
@@ -416,7 +558,7 @@ func (ep *NcsiEP) Detect() error {
 		}
 
 		err = ep.queryApp()
-		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
+		if time.Since(ep.LastSeen) > time.Second*EPtimeoutSec {
 			xlog.Debugf("Endpoint %s timed out\n", ep.Uuid)
 			if ep.State == EPstateRunning {
 				ep.ChangeState(EPstateDown)
@@ -424,7 +566,7 @@ func (ep *NcsiEP) Detect() error {
 		}
 	case EPstateDown:
 		//see if app came back up every 60 seconds
-		if time.Since(ep.LastReport) > time.Second*EPtimeoutSec {
+		if time.Since(ep.LastSeen) > time.Second*EPtimeoutSec {
 			err = ep.queryApp()
 		}
 	default:
@@ -444,6 +586,5 @@ func (ep *NcsiEP) queryApp() error {
 		cmd.submit()
 		return cmd.err
 	}
-	ep.Name = ep.App.GetAltName()
 	return err
 }
