@@ -119,16 +119,17 @@ func main() {
 	//Get cmd line args
 	handler.parseCMDArgs()
 
-	if handler.coms.GossipNodesPath != "" {
-		err = handler.coms.LoadConfigInfo()
-		if err != nil {
-			xlog.Fatal("Error while loading config info - ", err)
-		}
-	} else {
-		handler.coms.PortRange = make([]uint16, 1)
-	}
-
 	if !handler.standalone {
+		if handler.coms.GossipNodesPath != "" {
+			err = handler.coms.LoadConfigInfo()
+			if err != nil {
+				xlog.Fatal("Error while loading config info - ",
+					err)
+			}
+		} else {
+			handler.coms.PortRange = make([]uint16, 1)
+		}
+
 		xlog.Info("Starting Serf")
 
 		//Start serf agent
