@@ -129,7 +129,7 @@ type NISDChunkInfo struct {
 	McibMisses                 uint64 `json:"mcib-misses" type:"counter" metric:"nisd_chunk_mcib_misses"`
 	McibSectorReads            uint64 `json:"mcib-sector-reads" type:"counter" metric:"nisd_chunk_mcib_sector_reads"`
 	McibSectorWrites           uint64 `json:"mcib-sector-writes" type:"counter" metric:"nisd_chunk_mcib_sector_writes"`
-	StashPblk                  uint64 `json:"stash-pblk" type:"counter" metric:"nisd_chunk_stash_pblk"`
+	StashPblk                  int64  `json:"stash-pblk" type:"counter" metric:"nisd_chunk_stash_pblk"`
 	StashPblkStates            string `json:"stash-pblk-states"`
 }
 
