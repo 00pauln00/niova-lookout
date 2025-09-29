@@ -120,8 +120,6 @@ func (h *handler) gossipSetup() {
 		return
 	}
 
-	h.coms.PortRange = make([]uint16, 1)
-
 	xlog.Info("Starting Serf")
 
 	//Start serf agent
@@ -147,8 +145,9 @@ func main() {
 
 	//Get cmd line args
 	handler.parseCMDArgs()
-
 	handler.gossipSetup()
+
+	handler.coms.PortRange = make([]uint16, 1)
 
 	//Start lookout monitoring
 	xlog.Debug("Port Range: ", handler.coms.PortRange)
@@ -184,9 +183,10 @@ func main() {
 		xlog.Fatal("Error while starting http server : ", err)
 	}
 
+	// Wait for this lookout's http service
+	handler.coms.CheckHTTPLiveness()
+
 	if !handler.standalone {
-		//Wait till http lookout http is up and running
-		handler.coms.CheckHTTPLiveness()
 		go handler.coms.SetTags()
 		go handler.coms.GetTags()
 	}

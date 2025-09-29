@@ -66,9 +66,10 @@ type UdpMessage struct {
 func (h *CommHandler) CheckHTTPLiveness() {
 	var emptyByteArray []byte
 	for {
-		_, err := httpc.HTTP_Request(emptyByteArray,
-			"127.0.0.1:"+strconv.Itoa(int(*h.RetPort))+"/check",
-			false)
+		url := "127.0.0.1:" + strconv.Itoa(h.HttpPort) + "/check"
+		xlog.Infof("url=%s", url)
+
+		_, err := httpc.HTTP_Request(emptyByteArray, url, false)
 		if err != nil {
 			xlog.Error("HTTP Liveness - ", err)
 		} else {
