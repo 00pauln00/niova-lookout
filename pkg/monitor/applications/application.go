@@ -71,14 +71,15 @@ const (
 // placed here.  May consider using pointers for the fields in the future to
 // optimize memory usage and performance.
 type CtlIfOut struct {
-	SysInfo       *SystemInfo      `json:"system_info,omitempty"`
+	SysInfo       *SystemInfo      `json:"system_info,.omitempty"`
 	RaftRootEntry []RaftInfo       `json:"raft_root_entry,omitempty"`
-	NISD          []NISDInfo       `json:"niorq_mgr_root_entry,omitempty"`
+	NiorqMgr      []NiorqMgr       `json:"niorq_mgr_root_entry,omitempty"`
 	NISDRootEntry []NISDRoot       `json:"nisd_root_entry,omitempty"`
 	NISDChunk     []NISDChunkInfo  `json:"nisd_chunks,omitempty"`
+	MbMerge       []MbMerge        `json:"mb_merge_root_entry,omitempty"`
 	Tasks         []TaskInfo       `json:"tasks,omitempty"`
-	Defrag        ChunkDefrag      `json:"nisd_defrag"`
 	BufSetNodes   []BufferSetNodes `json:"buffer_set_nodes,omitempty"`
+	Defrag        ChunkDefrag      `json:"chunk_defrag,omitempty"`
 	Nclient       *NclientInfo     `json:"nclient_root_entry,omitempty"`
 }
 
