@@ -66,7 +66,7 @@ func (handler *handler) parseCMDArgs() {
 
 	flag.StringVar(&agentAddr, "a", "127.0.0.1", "Agent addr")
 	flag.StringVar(&handler.coms.GossipNodesPath, "c",
-		"./gossipNodes", "Gossip Node File Path")
+		"", "Gossip Node File Path")
 
 	flag.StringVar(&handler.promPath, "pr", "./targets.json",
 		"Prometheus targets info")
@@ -108,10 +108,39 @@ func usage(rc int) {
 	os.Exit(rc)
 }
 
+func (h *handler) gossipSetup() {
+	if h.standalone || h.coms.GossipNodesPath == "" {
+		xlog.Warn("Bypassing gossip setup")
+		return
+	}
+
+	err := h.coms.LoadConfigInfo()
+	if err != nil {
+		xlog.Error("Gossip LoadConfigInfo(): %s", err)
+		return
+	}
+
+	h.coms.PortRange = make([]uint16, 1)
+
+	xlog.Info("Starting Serf")
+
+	//Start serf agent
+	err = h.coms.StartSerfAgent()
+	if err != nil {
+		xlog.Error("handler.coms.StartSerfAgent(): ",
+			err)
+	} else {
+		if h.pmdb {
+			xlog.Info("Starting pmdb client API")
+			h.coms.StartClientAPI()
+			go h.coms.StartUDPListner()
+		}
+	}
+}
+
 func main() {
 	var handler handler
 	var portAddr *int
-	var err error
 
 	//Initialize communication handler
 	handler.coms = communication.CommHandler{}
@@ -119,31 +148,7 @@ func main() {
 	//Get cmd line args
 	handler.parseCMDArgs()
 
-	if !handler.standalone {
-		if handler.coms.GossipNodesPath != "" {
-			err = handler.coms.LoadConfigInfo()
-			if err != nil {
-				xlog.Fatal("Error while loading config info - ",
-					err)
-			}
-		} else {
-			handler.coms.PortRange = make([]uint16, 1)
-		}
-
-		xlog.Info("Starting Serf")
-
-		//Start serf agent
-		err = handler.coms.StartSerfAgent()
-		if err != nil {
-			xlog.Fatal("Error while starting serf agent: ", err)
-		}
-
-		if handler.pmdb {
-			xlog.Info("Starting Client API for PMDB")
-			handler.coms.StartClientAPI()
-			go handler.coms.StartUDPListner()
-		}
-	}
+	handler.gossipSetup()
 
 	//Start lookout monitoring
 	xlog.Debug("Port Range: ", handler.coms.PortRange)
