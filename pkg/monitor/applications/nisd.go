@@ -38,7 +38,7 @@ type Nisd struct {
 	address    string // IP address of the NISD instance
 }
 
-type NISDInfo struct {
+type NiorqMgr struct {
 	UUID                  string    `json:"uuid"`
 	DevPath               string    `json:"dev-path"`
 	ServerMode            bool      `json:"server-mode"`
@@ -74,6 +74,7 @@ type NISDRoot struct {
 	VBlockRead              uint64    `json:"vblks-read" type:"counter" metric:"nisd_vblk_read"`
 	VBlockHoleRead          uint64    `json:"vblks-hole-read" type:"gauge" metric:"nisd_vblk_hole_read"`
 	VBlockWritten           uint64    `json:"vblks-written" type:"counter" metric:"nisd_vblk_write"`
+	VBlockTrim              uint64    `json:"vblks-trimmed" type:"counter" metric:"nisd_vblk_trim"`
 	S3SyncSendBytes         uint64    `json:"s3-sync-send-bytes" type:"gauge" metric:"nisd_s3_sync_send_bytes"`
 	S3SyncVBlksRead         uint64    `json:"s3-sync-vblks-read" type:"gauge" metric:"nisd_s3_sync_vblks_read"`
 	MetablockSectorsRead    uint64    `json:"metablock-sectors-read" type:"counter" metric:"nisd_metablock_sectors_read"`
@@ -85,6 +86,9 @@ type NISDRoot struct {
 	NumReservedPblksUsed    uint64    `json:"num-reserved-pblks-used" type:"counter" metric:"nisd_num_reserved_pblks_used"`
 	NumPblks                uint64    `json:"num-pblks" type:"counter" metric:"nisd_num_pblks"`
 	NumPblksUsed            uint64    `json:"num-pblks-used" type:"counter" metric:"nisd_num_pblks_used"`
+	NumPblksAssignWait      uint64    `json:"num-pblks-assign-wait" type:"counter" metric:"nisd_num_pblks_assign_wait"`
+	NumPblksAssignYield     uint64    `json:"num-pblks-assign-yield" type:"counter" metric:"nisd_num_pblks_assign_yield"`
+	NumPblksAssignYieldErr  uint64    `json:"num-pblks-assign-yielded-err" type:"counter" metric:"nisd_num_pblks_assign_yield_err"`
 	ReleaseObjBusy          uint64    `json:"release-obj-busy" type:"gauge" metric:"nisd_release_obj_busy"`
 	ReleaseXtraObjBusy      uint64    `json:"release-xtra-obj-busy" type:"gauge" metric:"nisd_release_xtra_obj_busy"`
 	ReleaseObjTotal         uint64    `json:"release-obj-total" type:"counter" metric:"nisd_release_obj_total"`
@@ -93,8 +97,10 @@ type NISDRoot struct {
 	AltName                 string    `json:"alt-name"`
 	VBlkMetaReadSectors     Histogram `json:"vblk-meta-read-sectors" type:"histogram" metric:"nisd_vblk_meta_read_sectors"`
 	MCIBMetaReadSectors     Histogram `json:"mcib-meta-read-sectors" type:"histogram" metric:"nisd_mcib_meta_read_sectors"`
-	FullCompactionMsec      Histogram `json:"full-compaction-msec" type:"histogram" metric:"nisd_full_compaction_msec"`
-	ShallowCompactionMsec   Histogram `json:"shallow-compaction-msec" type:"histogram" metric:"nisd_shallow_compaction_msec"`
+	MWCPoolFree             uint64    `json:"mwc-pool-free" type:"gauge" metric:"nisd_mwc_pool_free"`
+	MWCPoolAlloc            uint64    `json:"mwc-pool-alloc" type:"gauge" metric:"nisd_mwc_pool_alloc"`
+	MWCPoolMaxAlloc         uint64    `json:"mwc-pool-max-alloc" type:"gauge" metric:"nisd_mwc_pool_max_alloc"`
+	MWCPoolBufWaiters       uint64    `json:"mwc-pool-buf-waiters" type:"gauge" metric:"nisd_mwc_pool_buf_waiters"`
 }
 
 type NISDChunkInfo struct {
@@ -120,7 +126,7 @@ type NISDChunkInfo struct {
 	ClientRecoverySeqno        int64  `json:"client-recovery-seqno" type:"counter" metric:"nisd_chunk_client_recovery_seqno"`
 	MetablockSeqn              int64  `json:"metablock-seqno" type:"counter" metric:"nisd_chunk_metablock_seqno"`
 	S3SyncSeqno                int64  `json:"s3-sync-seqno" type:"counter" metric:"nisd_chunk_s3_sync_seqno"`
-	S3SyncState                string `json:"s3-sync-state"`
+	S3SyncState                string `json:"s3-sync-state" metric:"nisd_chunk_s3_state"`
 	NumCme                     uint64 `json:"num-cme" type:"counter" metric:"nisd_chunk_num_cme"`
 	RefCnt                     uint64 `json:"ref-cnt" type:"counter" metric:"nisd_chunk_ref_cnt"`
 	OooMbSyncCnt               uint64 `json:"ooo-mb-sync-cnt" type:"counter" metric:"nisd_chunk_ooo_mb_sync_cnt"`
@@ -131,6 +137,15 @@ type NISDChunkInfo struct {
 	McibSectorWrites           uint64 `json:"mcib-sector-writes" type:"counter" metric:"nisd_chunk_mcib_sector_writes"`
 	StashPblk                  int64  `json:"stash-pblk" type:"counter" metric:"nisd_chunk_stash_pblk"`
 	StashPblkStates            string `json:"stash-pblk-states"`
+	MWCSize                    uint64 `json:"mwc-size" type:"gauge"   metric:"nisd_chunk_mwc_size"`
+	MWCMaxSize                 uint64 `json:"mwc-max-size" type:"gauge"   metric:"nisd_chunk_mwc_max_size"`
+	MWCWaiters                 uint64 `json:"mwc-waiters" type:"gauge"   metric:"nisd_chunk_mwc_waiters"`
+	MWCMaxWaiters              uint64 `json:"mwc-max-waiters" type:"gauge"   metric:"nisd_chunk_mwc_max_waiters"`
+	MWCInsert                  uint64 `json:"mwc-insert" type:"counter" metric:"nisd_chunk_mwc_insert"`
+	MRCVblksRead               uint64 `json:"mrc-vblks-read" type:"counter" metric:"nisd_chunk_vblks_mrc_read"`
+	DefragStatus               string `json:"defrag-status" metric:"nisd_chunk_defrag_status"`
+	DefragPblksReclaimed       uint64 `json:"defrag-pblks-reclaimed" type:"counter" metric:"nisd_chunk_pblks_reclaimed_defrag"`
+	MbMergePblksReclaimed      uint64 `json:"mb-merge-pblks-reclaimed" type:"counter" metric:"nisd_chunk_pblks_reclaimed_mb_merge"`
 }
 
 type BufferSetNodes struct {
@@ -140,7 +155,47 @@ type BufferSetNodes struct {
 	InUse         uint64 `json:"in-use" type:"gauge" metric:"buf_set_node_in_use"`
 	TotalUsed     uint64 `json:"total-used" type:"counter" metric:"buf_set_node_total_used"`
 	MaxInUse      uint64 `json:"max-in-use" type:"counter" metric:"buf_set_node_max_in_use"`
-	NumUserCached uint64 `json:"num-user-cached" type:"counter" metric:"buf_set_node_num_user_cached"`
+	NumUserCached uint64 `json:"num-user-cached" type:"gauge" metric:"buf_set_node_num_user_cached"`
+}
+
+type TaskInfo struct {
+	Type           string `json:"type"`
+	ExecCnt        uint64 `json:"exec-cnt" type:"counter" metric:"task_exec_cnt"`
+	YieldCnt       uint64 `json:"yield-cnt" type:"counter" metric:"task_yield_cnt"`
+	Running        uint64 `json:"running" type:"gauge" metric:"task_num_running"`
+	MaxStack       uint64 `json:"max-save-stack-size" type:"gauge" metric:"task_max_stack"`
+	WaitCoBuf      uint64 `json:"wait-co-buf" type:"gauge" metric:"task_wait_co_buf"`
+	WaitBulkBuf    uint64 `json:"wait-bulk-buf" type:"gauge" metric:"task_wait_bulk_buf"`
+	WaitPblk       uint64 `json:"wait-pblk" type:"gauge" metric:"task_wait_pblk"`
+	WaitIO         uint64 `json:"wait-io" type:"gauge" metric:"task_wait_io"`
+	WaitUser       uint64 `json:"wait-user-resource" type:"gauge" metric:"task_wait_user"`
+	WaitUserNet    uint64 `json:"wait-user-net-resource" type:"gauge" metric:"task_wait_user_net"`
+	WaitMergePre   uint64 `json:"wait-merge-preempted" type:"gauge" metric:"task_wait_merge_pre"`
+	WaitMBCSync    uint64 `json:"wait-mbc-sync" type:"gauge" metric:"task_wait_mbc_sync"`
+	WaitMBCBuf     uint64 `json:"wait-mbc-buf" type:"gauge" metric:"task_wait_mbc_buf"`
+	WaitFaultInj   uint64 `json:"wait-fault-inject" type:"gauge" metric:"task_wait_fault_inj"`
+	WaitSerialized uint64 `json:"wait-serialized" type:"gauge" metric:"task_wait_serial"`
+	WaitS3onDemand uint64 `json:"wait-s3-on-demand" type:"gauge" metric:"task_wait_s3"`
+	WaitWCBuf      uint64 `json:"wait-wc-buf" type:"gauge" metric:"task_wait_wc_buf"`
+	WaitWCPresync  uint64 `json:"wait-wc-presync" type:"gauge" metric:"task_wait_wc_presync"`
+	WaitOther      uint64 `json:"wait-other" type:"gauge" metric:"task_wait_other"`
+}
+
+type MbMerge struct {
+	Mode             string    `json:"mode"`
+	InProgressCnt    uint64    `json:"in-progress-cnt" type:"gauge" metric:"merge_in_progress"`
+	DoneChainEnd     uint64    `json:"chain-end" type:"counter" metric:"merge_done_chain_end"`
+	DoneFence        uint64    `json:"merge-fence" type:"counter" metric:"merge_done_fence"`
+	DoneMbmrhNoSpc   uint64    `json:"mbmrh-enospc" type:"counter" metric:"merge_done_mbmrh_nospc"`
+	DoneEncroachFull uint64    `json:"encroach-full-merge" type:"counter" metric:"merge_done_encroach_full"`
+	DoneShallow      uint64    `json:"shallow-done" type:"counter" metric:"merge_done_shallow"`
+	CompleteMs       Histogram `json:"complete-merge-ms" type:"histogram" metric:"nisd_merge_complete_ms"`
+	PartialMs        Histogram `json:"partial-merge-ms" type:"histogram" metric:"nisd_merge_partial_ms"`
+}
+
+type ChunkDefrag struct {
+	ReclaimedPblksPerChunk Histogram `json:"reclaimed-pblks-per-chunk" type:"histogram" metric:"nisd_defrag_reclaimed_pblks_chunk"`
+	CompletionMS           Histogram `json:"completion-ms" type:"histogram" metric:"nisd_defrag_completion_ms"`
 }
 
 func FillNisdCStruct(UUID string, ipaddr string, port int) []byte {
@@ -197,11 +252,13 @@ func (n *Nisd) GetAppDetectInfo(b bool) (string, EPcmdType) {
 }
 
 func (n *Nisd) SetCtlIfOut(c CtlIfOut) {
-	n.EPInfo.NISD = c.NISD
+	n.EPInfo.NiorqMgr = c.NiorqMgr
 	n.EPInfo.NISDRootEntry = c.NISDRootEntry
 	n.EPInfo.SysInfo = c.SysInfo
 	n.EPInfo.NISDChunk = c.NISDChunk
 	n.EPInfo.BufSetNodes = c.BufSetNodes
+	n.EPInfo.MbMerge = c.MbMerge
+	n.EPInfo.Tasks = c.Tasks
 }
 
 func (n *Nisd) GetCtlIfOut() CtlIfOut {
@@ -236,7 +293,7 @@ func (n *Nisd) Parse(labels map[string]string, w http.ResponseWriter,
 	if condition := len(n.EPInfo.NISDRootEntry) == 0; !condition {
 		labels = n.LoadNISDLabelMap(labels)
 
-		out += ph.GenericPromDataParser(n.EPInfo.NISD[0], labels)
+		out += ph.GenericPromDataParser(n.EPInfo.NiorqMgr[0], labels)
 		out += ph.GenericPromDataParser(n.EPInfo.NISDRootEntry[0],
 			labels)
 		out += ph.GenericPromDataParser(*n.EPInfo.SysInfo, labels)
@@ -261,6 +318,21 @@ func (n *Nisd) Parse(labels map[string]string, w http.ResponseWriter,
 			// Parse each buffer set node info
 			out += ph.GenericPromDataParser(buffer, labels)
 		}
+
+		for _, task := range n.EPInfo.Tasks {
+			// load labels with buffer set node data
+			labels["NAME"] = task.Type
+			// Parse each buffer set node info
+			out += ph.GenericPromDataParser(task, labels)
+		}
+
+		for _, mbm := range n.EPInfo.MbMerge {
+			// load labels with buffer set node data
+			labels["NAME"] = mbm.Mode
+			// Parse each buffer set node info
+			out += ph.GenericPromDataParser(mbm, labels)
+		}
+
 	}
 	fmt.Fprintf(w, "%s", out)
 }

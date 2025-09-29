@@ -22,7 +22,6 @@ type handler struct {
 	httpPort     int
 	ctlPath      *string
 	promPath     string
-	standalone   bool
 	pmdb         bool
 	PortRangeStr string
 	coms         communication.CommHandler
@@ -46,9 +45,6 @@ func (handler *handler) parseCMDArgs() {
 	logLevel = flag.String("log", "warn",
 		"set log level (error, warn, info, debug, trace)")
 
-	flag.BoolVar(&handler.standalone, "std", false,
-		"Set flag to true to run lookout standalone for NISD")
-
 	flag.BoolVar(&handler.pmdb, "pmdb", false,
 		"Set flag to true to run lookout with pmdb")
 
@@ -66,7 +62,7 @@ func (handler *handler) parseCMDArgs() {
 
 	flag.StringVar(&agentAddr, "a", "127.0.0.1", "Agent addr")
 	flag.StringVar(&handler.coms.GossipNodesPath, "c",
-		"./gossipNodes", "Gossip Node File Path")
+		"", "Gossip Node File Path")
 
 	flag.StringVar(&handler.promPath, "pr", "./targets.json",
 		"Prometheus targets info")
@@ -108,10 +104,40 @@ func usage(rc int) {
 	os.Exit(rc)
 }
 
+func (h *handler) gossipSetup() {
+	if h.coms.GossipNodesPath == "" {
+		xlog.Warn("Bypassing gossip setup")
+		return
+	}
+
+	err := h.coms.LoadConfigInfo()
+	if err != nil {
+		xlog.Error("Gossip LoadConfigInfo(): %s", err)
+		return
+	}
+
+	xlog.Info("Starting Serf")
+
+	//Start serf agent
+	err = h.coms.StartSerfAgent()
+	if err != nil {
+		xlog.Error("handler.coms.StartSerfAgent(): ",
+			err)
+	} else {
+		if h.pmdb {
+			xlog.Info("Starting pmdb client API")
+			h.coms.StartClientAPI()
+			go h.coms.StartUDPListner()
+		}
+
+		go h.coms.SetTags()
+		go h.coms.GetTags()
+	}
+}
+
 func main() {
 	var handler handler
 	var portAddr *int
-	var err error
 
 	//Initialize communication handler
 	handler.coms = communication.CommHandler{}
@@ -119,31 +145,7 @@ func main() {
 	//Get cmd line args
 	handler.parseCMDArgs()
 
-	if !handler.standalone {
-		if handler.coms.GossipNodesPath != "" {
-			err = handler.coms.LoadConfigInfo()
-			if err != nil {
-				xlog.Fatal("Error while loading config info - ",
-					err)
-			}
-		} else {
-			handler.coms.PortRange = make([]uint16, 1)
-		}
-
-		xlog.Info("Starting Serf")
-
-		//Start serf agent
-		err = handler.coms.StartSerfAgent()
-		if err != nil {
-			xlog.Fatal("Error while starting serf agent: ", err)
-		}
-
-		if handler.pmdb {
-			xlog.Info("Starting Client API for PMDB")
-			handler.coms.StartClientAPI()
-			go handler.coms.StartUDPListner()
-		}
-	}
+	handler.coms.PortRange = make([]uint16, 1)
 
 	//Start lookout monitoring
 	xlog.Debug("Port Range: ", handler.coms.PortRange)
@@ -179,12 +181,10 @@ func main() {
 		xlog.Fatal("Error while starting http server : ", err)
 	}
 
-	if !handler.standalone {
-		//Wait till http lookout http is up and running
-		handler.coms.CheckHTTPLiveness()
-		go handler.coms.SetTags()
-		go handler.coms.GetTags()
-	}
+	// Wait for this lookout's http service
+	handler.coms.CheckHTTPLiveness()
+
+	handler.gossipSetup()
 
 	//Start lookout
 	xlog.Info("Starting lookout")

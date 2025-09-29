@@ -63,15 +63,25 @@ func (n *Nclient) Parse(labels map[string]string, w http.ResponseWriter,
 
 	if len(n.EPInfo.Nclient.VdevUUID) > 0 {
 		out += pm.GenericPromDataParser(*n.EPInfo.Nclient, labels)
-		out += pm.GenericPromDataParser(n.EPInfo.NISD[0], labels)
+		out += pm.GenericPromDataParser(n.EPInfo.NiorqMgr[0], labels)
 		out += pm.GenericPromDataParser(*n.EPInfo.SysInfo, labels)
 	}
+
+	for _, task := range n.EPInfo.Tasks {
+		// load labels with buffer set node data
+		labels["NAME"] = task.Type
+		// Parse each buffer set node info
+		out += pm.GenericPromDataParser(task, labels)
+	}
+
 	fmt.Fprintf(w, "%s", out)
 }
 
 func (n *Nclient) SetCtlIfOut(c CtlIfOut) {
 	n.EPInfo.Nclient = c.Nclient
 	n.EPInfo.SysInfo = c.SysInfo
+	n.EPInfo.NiorqMgr = c.NiorqMgr
+	n.EPInfo.Tasks = c.Tasks
 }
 
 func (n *Nclient) SetMembership(map[string]bool) {
