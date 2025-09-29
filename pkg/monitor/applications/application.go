@@ -77,6 +77,7 @@ type CtlIfOut struct {
 	NISDRootEntry []NISDRoot       `json:"nisd_root_entry,omitempty"`
 	NISDChunk     []NISDChunkInfo  `json:"nisd_chunks,omitempty"`
 	Tasks         []TaskInfo       `json:"tasks,omitempty"`
+	Defrag        ChunkDefrag      `json:"nisd_defrag"`
 	BufSetNodes   []BufferSetNodes `json:"buffer_set_nodes,omitempty"`
 	Nclient       *NclientInfo     `json:"nclient_root_entry,omitempty"`
 }

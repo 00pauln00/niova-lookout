@@ -171,6 +171,11 @@ type TaskInfo struct {
 	WaitOther      uint64 `json:"wait-other" type:"gauge" metric:"task_wait_other"`
 }
 
+type ChunkDefrag struct {
+	ReclaimedPblksPerChunk Histogram `json:"reclaimed-pblks-per-chunk" type:"histogram" metric:"nisd_defrag_reclaimed_pblks_chunk"`
+	CompletionMS           Histogram `json:"completion-ms" type:"histogram" metric:"nisd_defrag_completion_ms"`
+}
+
 func FillNisdCStruct(UUID string, ipaddr string, port int) []byte {
 	nisd_peer_config := C.struct_nisd_config{}
 	uuidCStr := C.CString(UUID)
