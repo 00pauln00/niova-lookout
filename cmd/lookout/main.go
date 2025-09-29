@@ -22,7 +22,6 @@ type handler struct {
 	httpPort     int
 	ctlPath      *string
 	promPath     string
-	standalone   bool
 	pmdb         bool
 	PortRangeStr string
 	coms         communication.CommHandler
@@ -45,9 +44,6 @@ func (handler *handler) parseCMDArgs() {
 
 	logLevel = flag.String("log", "warn",
 		"set log level (error, warn, info, debug, trace)")
-
-	flag.BoolVar(&handler.standalone, "std", false,
-		"Set flag to true to run lookout standalone for NISD")
 
 	flag.BoolVar(&handler.pmdb, "pmdb", false,
 		"Set flag to true to run lookout with pmdb")
@@ -109,7 +105,7 @@ func usage(rc int) {
 }
 
 func (h *handler) gossipSetup() {
-	if h.standalone || h.coms.GossipNodesPath == "" {
+	if h.coms.GossipNodesPath == "" {
 		xlog.Warn("Bypassing gossip setup")
 		return
 	}
@@ -133,6 +129,9 @@ func (h *handler) gossipSetup() {
 			h.coms.StartClientAPI()
 			go h.coms.StartUDPListner()
 		}
+
+		go h.coms.SetTags()
+		go h.coms.GetTags()
 	}
 }
 
@@ -145,7 +144,6 @@ func main() {
 
 	//Get cmd line args
 	handler.parseCMDArgs()
-	handler.gossipSetup()
 
 	handler.coms.PortRange = make([]uint16, 1)
 
@@ -186,10 +184,7 @@ func main() {
 	// Wait for this lookout's http service
 	handler.coms.CheckHTTPLiveness()
 
-	if !handler.standalone {
-		go handler.coms.SetTags()
-		go handler.coms.GetTags()
-	}
+	handler.gossipSetup()
 
 	//Start lookout
 	xlog.Info("Starting lookout")
