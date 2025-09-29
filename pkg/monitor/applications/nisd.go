@@ -74,6 +74,7 @@ type NISDRoot struct {
 	VBlockRead              uint64    `json:"vblks-read" type:"counter" metric:"nisd_vblk_read"`
 	VBlockHoleRead          uint64    `json:"vblks-hole-read" type:"gauge" metric:"nisd_vblk_hole_read"`
 	VBlockWritten           uint64    `json:"vblks-written" type:"counter" metric:"nisd_vblk_write"`
+	VBlockTrim              uint64    `json:"vblks-trim" type:"counter" metric:"nisd_vblk_trim"`
 	S3SyncSendBytes         uint64    `json:"s3-sync-send-bytes" type:"gauge" metric:"nisd_s3_sync_send_bytes"`
 	S3SyncVBlksRead         uint64    `json:"s3-sync-vblks-read" type:"gauge" metric:"nisd_s3_sync_vblks_read"`
 	MetablockSectorsRead    uint64    `json:"metablock-sectors-read" type:"counter" metric:"nisd_metablock_sectors_read"`
@@ -85,6 +86,9 @@ type NISDRoot struct {
 	NumReservedPblksUsed    uint64    `json:"num-reserved-pblks-used" type:"counter" metric:"nisd_num_reserved_pblks_used"`
 	NumPblks                uint64    `json:"num-pblks" type:"counter" metric:"nisd_num_pblks"`
 	NumPblksUsed            uint64    `json:"num-pblks-used" type:"counter" metric:"nisd_num_pblks_used"`
+	NumPblksAssignWait      uint64    `json:"num-pblks-assign-wait" type:"counter" metric:"nisd_num_pblks_assign_wait"`
+	NumPblksAssignYield     uint64    `json:"num-pblks-assign-yield" type:"counter" metric:"nisd_num_pblks_assign_yield"`
+	NumPblksAssignYieldErr  uint64    `json:"num-pblks-assign-yielded-err" type:"counter" metric:"nisd_num_pblks_assign_yield_err"`
 	ReleaseObjBusy          uint64    `json:"release-obj-busy" type:"gauge" metric:"nisd_release_obj_busy"`
 	ReleaseXtraObjBusy      uint64    `json:"release-xtra-obj-busy" type:"gauge" metric:"nisd_release_xtra_obj_busy"`
 	ReleaseObjTotal         uint64    `json:"release-obj-total" type:"counter" metric:"nisd_release_obj_total"`
@@ -93,8 +97,10 @@ type NISDRoot struct {
 	AltName                 string    `json:"alt-name"`
 	VBlkMetaReadSectors     Histogram `json:"vblk-meta-read-sectors" type:"histogram" metric:"nisd_vblk_meta_read_sectors"`
 	MCIBMetaReadSectors     Histogram `json:"mcib-meta-read-sectors" type:"histogram" metric:"nisd_mcib_meta_read_sectors"`
-	FullCompactionMsec      Histogram `json:"full-compaction-msec" type:"histogram" metric:"nisd_full_compaction_msec"`
-	ShallowCompactionMsec   Histogram `json:"shallow-compaction-msec" type:"histogram" metric:"nisd_shallow_compaction_msec"`
+	MWCPoolFree             uint64    `json:"mwc-pool-free" type:"counter" metric:"nisd_mwc_pool_free"`
+	MWCPoolAlloc            uint64    `json:"mwc-pool-alloc" type:"gauge" metric:"nisd_mwc_pool_alloc"`
+	MWCPoolMaxAlloc         uint64    `json:"mwc-pool-max-alloc" type:"gauge" metric:"nisd_mwc_pool_max_alloc"`
+	MWCPoolBufWaiters       uint64    `json:"mwc-pool-buf-waiters" type:"gauge" metric:"nisd_mwc_pool_buf_waiters"`
 }
 
 type NISDChunkInfo struct {
