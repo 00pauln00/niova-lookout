@@ -149,6 +149,28 @@ type BufferSetNodes struct {
 	NumUserCached uint64 `json:"num-user-cached" type:"counter" metric:"buf_set_node_num_user_cached"`
 }
 
+type TaskInfo struct {
+	Type           string `json:"type"`
+	ExecCnt        uint64 `json:"exec-cnt" type:"counter" metric:"task_exec_cnt"`
+	YieldCnt       uint64 `json:"yield-cnt" type:"counter" metric:"task_yield_cnt"`
+	Running        uint64 `json:"running" type:"gauge" metric:"task_num_running"`
+	MaxStack       uint64 `json:"max-save-stack-size" type:"gauge" metric:"task_max_stack"`
+	WaitCoBuf      uint64 `json:"wait-co-buf" type:"gauge" metric:"task_wait_co_buf"`
+	WaitBulkBuf    uint64 `json:"wait-bulk-buf" type:"gauge" metric:"task_wait_bulk_buf"`
+	WaitPblk       uint64 `json:"wait-pblk" type:"gauge" metric:"task_wait_pblk"`
+	WaitIO         uint64 `json:"wait-io" type:"gauge" metric:"task_wait_io"`
+	WaitUser       uint64 `json:"wait-user-resource" type:"gauge" metric:"task_wait_user"`
+	WaitUserNet    uint64 `json:"wait-user-net-resource" type:"gauge" metric:"task_wait_user_net"`
+	WaitMergePre   uint64 `json:"wait-merge-preempted" type:"gauge" metric:"task_wait_merge_pre"`
+	WaitMBCSync    uint64 `json:"wait-mbc-sync" type:"gauge" metric:"task_wait_mbc_sync"`
+	WaitMBCBuf     uint64 `json:"wait-mbc-buf" type:"gauge" metric:"task_wait_mbc_buf"`
+	WaitSerialized uint64 `json:"wait-serialized" type:"gauge" metric:"task_wait_serial"`
+	WaitS3onDemand uint64 `json:"wait-s3-on-demand" type:"gauge" metric:"task_wait_s3"`
+	WaitWCBuf      uint64 `json:"wait-wc-buf" type:"gauge" metric:"task_wait_wc_buf"`
+	WaitWCPresync  uint64 `json:"wait-wc-presync" type:"gauge" metric:"task_wait_wc_presync"`
+	WaitOther      uint64 `json:"wait-other" type:"gauge" metric:"task_wait_other"`
+}
+
 func FillNisdCStruct(UUID string, ipaddr string, port int) []byte {
 	nisd_peer_config := C.struct_nisd_config{}
 	uuidCStr := C.CString(UUID)
