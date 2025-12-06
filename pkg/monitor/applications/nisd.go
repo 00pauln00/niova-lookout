@@ -107,7 +107,8 @@ type NISDChunkInfo struct {
 	VdevUUID                   string `json:"vdev-uuid"`
 	Number                     uint64 `json:"number"`
 	Tier                       uint64 `json:"tier" type:"gauge" metric:"nisd_chunk_tier"`
-	Type                       uint64 `json:"type" type:"gauge" metric:"nisd_chunk_type"`
+	Pos                        uint64 `json:"pos" type:"gauge" metric:"nisd_chunk_pos"`
+	Type                       string `json:"type" type:"gauge" metric:"nisd_chunk_type"`
 	NumDataPblks               uint64 `json:"num-data-pblks" type:"counter" metric:"nisd_chunk_num_data_pblks"`
 	NumMetaPblks               uint64 `json:"num-meta-pblks" type:"counter" metric:"nisd_chunk_num_meta_pblks"`
 	NumMcibPblks               uint64 `json:"num-mcib-pblks" type:"counter" metric:"nisd_chunk_num_mcib_pblks"`
