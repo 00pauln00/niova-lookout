@@ -143,6 +143,8 @@ type NISDChunkInfo struct {
 	MWCWaiters                 uint64 `json:"mwc-waiters" type:"gauge"   metric:"nisd_chunk_mwc_waiters"`
 	MWCMaxWaiters              uint64 `json:"mwc-max-waiters" type:"gauge"   metric:"nisd_chunk_mwc_max_waiters"`
 	MWCInsert                  uint64 `json:"mwc-insert" type:"counter" metric:"nisd_chunk_mwc_insert"`
+	MRCSize                    uint64 `json:"mrc-size" type:"gauge"   metric:"nisd_chunk_mrc_size"`
+	MRCMaxSize                 uint64 `json:"mrc-max-size" type:"gauge"   metric:"nisd_chunk_mrc_max_size"`
 	MRCVblksRead               uint64 `json:"mrc-vblks-read" type:"counter" metric:"nisd_chunk_vblks_mrc_read"`
 	DefragStatus               string `json:"defrag-status" metric:"nisd_chunk_defrag_status"`
 	DefragPblksReclaimed       uint64 `json:"defrag-pblks-reclaimed" type:"counter" metric:"nisd_chunk_pblks_reclaimed_defrag"`
