@@ -75,6 +75,7 @@ type NISDRoot struct {
 	VBlockHoleRead          uint64    `json:"vblks-hole-read" type:"gauge" metric:"nisd_vblk_hole_read"`
 	VBlockWritten           uint64    `json:"vblks-written" type:"counter" metric:"nisd_vblk_write"`
 	VBlockTrim              uint64    `json:"vblks-trimmed" type:"counter" metric:"nisd_vblk_trim"`
+	VBlockScrub             uint64    `json:"vblks-scrubbed" type:"counter" metric:"nisd_vblk_scrubbed"`
 	S3SyncSendBytes         uint64    `json:"s3-sync-send-bytes" type:"gauge" metric:"nisd_s3_sync_send_bytes"`
 	S3SyncVBlksRead         uint64    `json:"s3-sync-vblks-read" type:"gauge" metric:"nisd_s3_sync_vblks_read"`
 	MetablockSectorsRead    uint64    `json:"metablock-sectors-read" type:"counter" metric:"nisd_metablock_sectors_read"`
