@@ -105,51 +105,96 @@ type NISDRoot struct {
 }
 
 type NISDChunkInfo struct {
-	VdevUUID                   string `json:"vdev-uuid"`
-	Number                     uint64 `json:"number"`
-	Tier                       uint64 `json:"tier" type:"gauge" metric:"nisd_chunk_tier"`
-	Pos                        uint64 `json:"pos" type:"gauge" metric:"nisd_chunk_pos"`
-	Type                       string `json:"type"`
-	NumDataPblks               uint64 `json:"num-data-pblks" type:"counter" metric:"nisd_chunk_num_data_pblks"`
-	NumMetaPblks               uint64 `json:"num-meta-pblks" type:"counter" metric:"nisd_chunk_num_meta_pblks"`
-	NumMcibPblks               uint64 `json:"num-mcib-pblks" type:"counter" metric:"nisd_chunk_num_mcib_pblks"`
-	NumReservedMetaPblks       uint64 `json:"num-reserved-meta-pblks" type:"counter" metric:"nisd_chunk_num_reserved_meta_pblks"`
-	NumTypical2ReservedMbLinks uint64 `json:"num-typical-2-reserved-mb-links" type:"counter" metric:"nisd_chunk_num_typical_2_reserved_mb_links"`
-	VblksRead                  uint64 `json:"vblks-read" type:"counter" metric:"nisd_chunk_vblks_read"`
-	VblksWritten               uint64 `json:"vblks-written" type:"counter" metric:"nisd_chunk_vblks_written"`
-	VblksPeerSent              uint64 `json:"vblks-peer-sent" type:"counter" metric:"nisd_chunk_vblks_peer_sent"`
-	VblksPeerRecvd             uint64 `json:"vblks-peer-recvd" type:"counter" metric:"nisd_chunk_vblks_peer_recvd"`
-	MergeShallowCnt            uint64 `json:"merge-shallow-cnt" type:"counter" metric:"nisd_chunk_merge_shallow_cnt"`
-	MergeShallowStatus         string `json:"merge-shallow-status"`
-	MergeFullCnt               uint64 `json:"merge-full-cnt" type:"counter" metric:"nisd_chunk_merge_full_cnt"`
-	MergeFullCompletedCnt      uint64 `json:"merge-full-completed-cnt" type:"counter" metric:"nisd_chunk_merge_full_completed_cnt"`
-	MergeFullStatus            string `json:"merge-full-status"`
-	MergeFence                 int64  `json:"merge-fence" type:"counter" metric:"nisd_chunk_merge_fence"`
-	ClientRecoverySeqno        int64  `json:"client-recovery-seqno" type:"counter" metric:"nisd_chunk_client_recovery_seqno"`
-	MetablockSeqn              int64  `json:"metablock-seqno" type:"counter" metric:"nisd_chunk_metablock_seqno"`
-	S3SyncSeqno                int64  `json:"s3-sync-seqno" type:"counter" metric:"nisd_chunk_s3_sync_seqno"`
-	S3SyncState                string `json:"s3-sync-state" metric:"nisd_chunk_s3_state"`
-	NumCme                     uint64 `json:"num-cme" type:"counter" metric:"nisd_chunk_num_cme"`
-	RefCnt                     uint64 `json:"ref-cnt" type:"counter" metric:"nisd_chunk_ref_cnt"`
-	OooMbSyncCnt               uint64 `json:"ooo-mb-sync-cnt" type:"counter" metric:"nisd_chunk_ooo_mb_sync_cnt"`
-	OooMbSyncNewMpblkCnt       uint64 `json:"ooo-mb-sync-new-mpblk-cnt" type:"counter" metric:"nisd_chunk_ooo_mb_sync_new_mpblk_cnt"`
-	McibHits                   uint64 `json:"mcib-hits" type:"counter" metric:"nisd_chunk_mcib_hits"`
-	McibMisses                 uint64 `json:"mcib-misses" type:"counter" metric:"nisd_chunk_mcib_misses"`
-	McibSectorReads            uint64 `json:"mcib-sector-reads" type:"counter" metric:"nisd_chunk_mcib_sector_reads"`
-	McibSectorWrites           uint64 `json:"mcib-sector-writes" type:"counter" metric:"nisd_chunk_mcib_sector_writes"`
-	StashPblk                  int64  `json:"stash-pblk" type:"counter" metric:"nisd_chunk_stash_pblk"`
-	StashPblkStates            string `json:"stash-pblk-states"`
-	MWCSize                    uint64 `json:"mwc-size" type:"gauge"   metric:"nisd_chunk_mwc_size"`
-	MWCMaxSize                 uint64 `json:"mwc-max-size" type:"gauge"   metric:"nisd_chunk_mwc_max_size"`
-	MWCWaiters                 uint64 `json:"mwc-waiters" type:"gauge"   metric:"nisd_chunk_mwc_waiters"`
-	MWCMaxWaiters              uint64 `json:"mwc-max-waiters" type:"gauge"   metric:"nisd_chunk_mwc_max_waiters"`
-	MWCInsert                  uint64 `json:"mwc-insert" type:"counter" metric:"nisd_chunk_mwc_insert"`
-	MRCSize                    uint64 `json:"mrc-size" type:"gauge"   metric:"nisd_chunk_mrc_size"`
-	MRCMaxSize                 uint64 `json:"mrc-max-size" type:"gauge"   metric:"nisd_chunk_mrc_max_size"`
-	MRCVblksRead               uint64 `json:"mrc-vblks-read" type:"counter" metric:"nisd_chunk_vblks_mrc_read"`
-	DefragStatus               string `json:"defrag-status" metric:"nisd_chunk_defrag_status"`
-	DefragPblksReclaimed       uint64 `json:"defrag-pblks-reclaimed" type:"counter" metric:"nisd_chunk_pblks_reclaimed_defrag"`
-	MbMergePblksReclaimed      uint64 `json:"mb-merge-pblks-reclaimed" type:"counter" metric:"nisd_chunk_pblks_reclaimed_mb_merge"`
+	VdevUUID                   string       `json:"vdev-uuid"`
+	Number                     uint64       `json:"number"`
+	Tier                       uint64       `json:"tier" type:"gauge" metric:"nisd_chunk_tier"`
+	Pos                        uint64       `json:"pos" type:"gauge" metric:"nisd_chunk_pos"`
+	Type                       string       `json:"type"`
+	NumDataPblks               uint64       `json:"num-data-pblks" type:"counter" metric:"nisd_chunk_num_data_pblks"`
+	NumMetaPblks               uint64       `json:"num-meta-pblks" type:"counter" metric:"nisd_chunk_num_meta_pblks"`
+	NumMcibPblks               uint64       `json:"num-mcib-pblks" type:"counter" metric:"nisd_chunk_num_mcib_pblks"`
+	NumReservedMetaPblks       uint64       `json:"num-reserved-meta-pblks" type:"counter" metric:"nisd_chunk_num_reserved_meta_pblks"`
+	NumTypical2ReservedMbLinks uint64       `json:"num-typical-2-reserved-mb-links" type:"counter" metric:"nisd_chunk_num_typical_2_reserved_mb_links"`
+	VblksRead                  uint64       `json:"vblks-read" type:"counter" metric:"nisd_chunk_vblks_read"`
+	VblksWritten               uint64       `json:"vblks-written" type:"counter" metric:"nisd_chunk_vblks_written"`
+	VblksPeerSent              uint64       `json:"vblks-peer-sent" type:"counter" metric:"nisd_chunk_vblks_peer_sent"`
+	VblksPeerRecvd             uint64       `json:"vblks-peer-recvd" type:"counter" metric:"nisd_chunk_vblks_peer_recvd"`
+	MergeFenceRecovery         int64        `json:"merge-fence-recovery" type:"counter" metric:"nisd_chunk_merge_fence_recovery"`
+	ClientRecoverySeqno        int64        `json:"client-recovery-seqno" type:"counter" metric:"nisd_chunk_client_recovery_seqno"`
+	MetablockSeqn              int64        `json:"metablock-seqno" type:"counter" metric:"nisd_chunk_metablock_seqno"`
+	S3SyncSeqno                int64        `json:"s3-sync-seqno" type:"counter" metric:"nisd_chunk_s3_sync_seqno"`
+	S3SyncState                string       `json:"s3-sync-state" metric:"nisd_chunk_s3_state"`
+	NumCme                     uint64       `json:"num-cme" type:"counter" metric:"nisd_chunk_num_cme"`
+	RefCnt                     uint64       `json:"ref-cnt" type:"counter" metric:"nisd_chunk_ref_cnt"`
+	OooMbSyncCnt               uint64       `json:"ooo-mb-sync-cnt" type:"counter" metric:"nisd_chunk_ooo_mb_sync_cnt"`
+	OooMbSyncNewMpblkCnt       uint64       `json:"ooo-mb-sync-new-mpblk-cnt" type:"counter" metric:"nisd_chunk_ooo_mb_sync_new_mpblk_cnt"`
+	StashPblk                  int64        `json:"stash-pblk" type:"counter" metric:"nisd_chunk_stash_pblk"`
+	StashPblkStates            string       `json:"stash-pblk-states"`
+	McibInfo                   McibInfo     `json:"mcib-info"`
+	MergeInfo                  MergeInfo    `json:"merge-info"`
+	DefragInfo                 DefragInfo   `json:"defrag-info"`
+	ScrubInfo                  ScrubInfo    `json:"scrub-info"`
+	RollbackInfo               RollbackInfo `json:"rollback-info"`
+}
+
+// McibInfo mirrors NISD's "mcib-info" object (src/chunk_handle_ext.c) --
+// replaces the old flat mcib-hits/mcib-misses/mcib-sector-*/mwc-*/mrc-*
+// fields, which stopped matching the real (now-nested) schema and were
+// silently reporting zero.
+type McibInfo struct {
+	Hits                 uint64 `json:"hits" type:"counter" metric:"nisd_chunk_mcib_hits"`
+	Misses               uint64 `json:"misses" type:"counter" metric:"nisd_chunk_mcib_misses"`
+	CacheHits            uint64 `json:"cache-hits" type:"counter" metric:"nisd_chunk_mcib_cache_hits"`
+	SectorReads          uint64 `json:"sector-reads" type:"counter" metric:"nisd_chunk_mcib_sector_reads"`
+	SectorWrites         uint64 `json:"sector-writes" type:"counter" metric:"nisd_chunk_mcib_sector_writes"`
+	ReadCacheHits        uint64 `json:"read-cache-hits" type:"counter" metric:"nisd_chunk_vblks_mrc_read"`
+	ReadCacheSize        uint64 `json:"read-cache-size" type:"gauge" metric:"nisd_chunk_mrc_size"`
+	ReadCacheMaxSize     uint64 `json:"read-cache-max-size" type:"gauge" metric:"nisd_chunk_mrc_max_size"`
+	WriteCacheSize       uint64 `json:"write-cache-size" type:"gauge" metric:"nisd_chunk_mwc_size"`
+	WriteCacheMaxSize    uint64 `json:"write-cache-max-size" type:"gauge" metric:"nisd_chunk_mwc_max_size"`
+	WriteCacheWaiters    uint64 `json:"write-cache-waiters" type:"gauge" metric:"nisd_chunk_mwc_waiters"`
+	WriteCacheMaxWaiters uint64 `json:"write-cache-max-waiters" type:"gauge" metric:"nisd_chunk_mwc_max_waiters"`
+	WriteCacheInserts    uint64 `json:"write-cache-inserts" type:"counter" metric:"nisd_chunk_mwc_insert"`
+}
+
+// MergeInfo mirrors NISD's "merge-info" object -- replaces the old flat
+// merge-shallow-*/merge-full-*/merge-fence fields (merge-fence itself was
+// renamed to the chunk-level "merge-fence-recovery", not moved here).
+type MergeInfo struct {
+	ShallowCnt       uint64 `json:"shallow-cnt" type:"counter" metric:"nisd_chunk_merge_shallow_cnt"`
+	ShallowStatus    string `json:"shallow-status"`
+	FullCnt          uint64 `json:"full-cnt" type:"counter" metric:"nisd_chunk_merge_full_cnt"`
+	FullCompletedCnt uint64 `json:"full-completed-cnt" type:"counter" metric:"nisd_chunk_merge_full_completed_cnt"`
+	FullStatus       string `json:"full-status"`
+	S3Fence          int64  `json:"s3-fence" type:"counter" metric:"nisd_chunk_merge_s3_fence"`
+	DefragFence      int64  `json:"defrag-fence" type:"counter" metric:"nisd_chunk_merge_defrag_fence"`
+	PblksReclaimed   uint64 `json:"pblks-reclaimed" type:"counter" metric:"nisd_chunk_pblks_reclaimed_mb_merge"`
+}
+
+// DefragInfo mirrors NISD's "defrag-info" object -- replaces the old flat
+// defrag-status/defrag-pblks-reclaimed fields.
+type DefragInfo struct {
+	Status         string `json:"status" metric:"nisd_chunk_defrag_status"`
+	PblksReclaimed uint64 `json:"pblks-reclaimed" type:"counter" metric:"nisd_chunk_pblks_reclaimed_defrag"`
+}
+
+// ScrubInfo mirrors NISD's "scrub-info" object. No prior flat equivalent
+// existed on NISDChunkInfo; captured for completeness alongside the other
+// nested objects fixed here.
+type ScrubInfo struct {
+	Status           string `json:"status"`
+	LastScrub        string `json:"last-scrub"`
+	SubmitScrubYield bool   `json:"submit-scrub-yield"`
+}
+
+// RollbackInfo mirrors NISD's "rollback-info" object. No prior flat
+// equivalent existed on NISDChunkInfo; captured for completeness alongside
+// the other nested objects fixed here.
+type RollbackInfo struct {
+	RbCount      uint64 `json:"rb-count" type:"counter" metric:"nisd_chunk_rb_count"`
+	LastRbSeqno  int64  `json:"last-rb-seqno" type:"counter" metric:"nisd_chunk_last_rb_seqno"`
+	LastRbDate   string `json:"last-rb-date"`
+	LastRbStatus string `json:"last-rb-status"`
 }
 
 type BufferSetNodes struct {
@@ -311,6 +356,16 @@ func (n *Nisd) Parse(labels map[string]string, w http.ResponseWriter,
 
 			// Parse each nisd chunk info
 			out += ph.GenericPromDataParser(chunk, labels)
+
+			// Parse the nested per-chunk sub-objects. GenericPromDataParser
+			// only reflects one struct level at a time (see
+			// prometheusHandler.GenericPromDataParser), so each nested
+			// object needs its own explicit call, same as chunk itself.
+			out += ph.GenericPromDataParser(chunk.McibInfo, labels)
+			out += ph.GenericPromDataParser(chunk.MergeInfo, labels)
+			out += ph.GenericPromDataParser(chunk.DefragInfo, labels)
+			out += ph.GenericPromDataParser(chunk.ScrubInfo, labels)
+			out += ph.GenericPromDataParser(chunk.RollbackInfo, labels)
 		}
 		//remove "VDEV_UUID" and "CHUNK_NUM" from labels
 		delete(labels, "VDEV_UUID")
